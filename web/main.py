@@ -3,7 +3,9 @@
 import json
 import logging
 import os
+import platform
 import re
+import signal
 import socket
 import subprocess
 import threading
@@ -34,9 +36,11 @@ MINIO_DATA_DIR = os.path.join(REPO_ROOT, '.local', 'minio', 'data')
 SERVICE_START_TIMEOUT_SEC = 12.0
 SERVICE_STOP_TIMEOUT_SEC = 8.0
 SYSTEM_ACTION_LOCK_TIMEOUT_SEC = 5.0
+PLATFORM_IS_WINDOWS = os.name == 'nt'
+_SCRIPT_EXT = '.ps1' if PLATFORM_IS_WINDOWS else '.sh'
 SERVICE_SCRIPT_NAME = {
-    'crawler': 'run-crawler.ps1',
-    'minio': 'run-minio.ps1',
+    'crawler': f'run-crawler{_SCRIPT_EXT}',
+    'minio': f'run-minio{_SCRIPT_EXT}',
 }
 
 LOGGER = logging.getLogger(__name__)
@@ -167,10 +171,27 @@ def _ps_quote(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
+def _shell_quote(text: str) -> str:
+    """Escapes a string for safe use in POSIX shell commands."""
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
 def _run_powershell(ps_command: str, timeout_sec: float = 30.0) -> subprocess.CompletedProcess:
     """Executes a PowerShell command and captures both stdout and stderr."""
     return subprocess.run(
         ['powershell', '-NoProfile', '-Command', ps_command],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout_sec,
+    )
+
+
+def _run_shell(shell_command: str, timeout_sec: float = 30.0) -> subprocess.CompletedProcess:
+    """Executes a POSIX shell command and captures both stdout and stderr."""
+    return subprocess.run(
+        ['sh', '-c', shell_command],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
@@ -309,6 +330,51 @@ def _collect_windows_process_status() -> Dict[str, List[int]]:
     }
 
 
+def _collect_unix_process_status() -> Dict[str, List[int]]:
+    """Collects process IDs for web/crawler/minio on macOS/Linux via ps."""
+    web_pids: List[int] = []
+    crawler_pids: List[int] = []
+    minio_pids: List[int] = []
+
+    try:
+        result = subprocess.run(
+            ['ps', '-eo', 'pid,command'],
+            capture_output=True, text=True, check=False, timeout=5,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                parts = line.strip().split(None, 1)
+                if len(parts) < 2:
+                    continue
+                pid_str, cmd = parts
+                try:
+                    pid = int(pid_str)
+                except ValueError:
+                    continue
+
+                if 'uvicorn' in cmd and 'main:app' in cmd and REPO_ROOT in cmd:
+                    web_pids.append(pid)
+                elif 'main.py' in cmd and os.path.join(REPO_ROOT, 'crawler') in cmd:
+                    crawler_pids.append(pid)
+                elif 'minio' in cmd and (':9000' in cmd or MINIO_DATA_DIR in cmd):
+                    minio_pids.append(pid)
+    except Exception:
+        pass
+
+    return {
+        'web_pids': web_pids,
+        'crawler_pids': crawler_pids,
+        'minio_pids': minio_pids,
+    }
+
+
+def _collect_process_status() -> Dict[str, List[int]]:
+    """Collects process IDs for web/crawler/minio on current platform."""
+    if PLATFORM_IS_WINDOWS:
+        return _collect_windows_process_status()
+    return _collect_unix_process_status()
+
+
 def _collect_runtime_status(db) -> Dict[str, Any]:
     """Builds runtime health status for DB and local processes."""
     db_ready = True
@@ -319,12 +385,11 @@ def _collect_runtime_status(db) -> Dict[str, Any]:
 
     proc = {'web_pids': [], 'crawler_pids': [], 'minio_pids': []}
     process_error = ''
-    if os.name == 'nt':
-        try:
-            proc = _collect_windows_process_status()
-        except Exception as exc:
-            process_error = str(exc)
-            LOGGER.warning('Failed to collect process status: %s', exc)
+    try:
+        proc = _collect_process_status()
+    except Exception as exc:
+        process_error = str(exc)
+        LOGGER.warning('Failed to collect process status: %s', exc)
 
     minio_api_ready = _is_port_listening(MINIO_API_PORT)
     minio_console_ready = _is_port_listening(MINIO_CONSOLE_PORT)
@@ -387,34 +452,46 @@ def _local_script_path(script_name: str) -> str:
 def _start_local_service_script(script_name: str) -> str:
     """Starts a local service script in detached mode and returns log path."""
     script_path = _local_script_path(script_name)
-    service_name = script_name.replace('run-', '').replace('.ps1', '')
+    service_name = script_name.replace('run-', '').replace('.ps1', '').replace('.sh', '')
     os.makedirs(SYSTEM_LOG_DIR, exist_ok=True)
     log_path = _service_log_path(service_name)
 
-    launch_command = f"& {_ps_quote(script_path)} *>> {_ps_quote(log_path)}"
-    creationflags = 0
-    close_fds = True
-    if os.name == 'nt':
+    if PLATFORM_IS_WINDOWS:
+        launch_command = f"& {_ps_quote(script_path)} *>> {_ps_quote(log_path)}"
         creationflags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
-        close_fds = False
+        subprocess.Popen(
+            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', launch_command],
+            cwd=REPO_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            close_fds=False,
+        )
+    else:
+        log_handle = open(log_path, 'a', encoding='utf-8')
+        subprocess.Popen(
+            ['bash', script_path],
+            cwd=REPO_ROOT,
+            stdout=log_handle,
+            stderr=log_handle,
+            start_new_session=True,
+            close_fds=True,
+        )
 
-    subprocess.Popen(
-        ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', launch_command],
-        cwd=REPO_ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=creationflags,
-        close_fds=close_fds,
-    )
     return log_path
 
 
 def _stop_local_service(service: str) -> List[int]:
     """Stops local crawler or minio process group by commandline fingerprint."""
     service_key = _service_key_or_400(service)
-    if os.name != 'nt':
-        raise HTTPException(400, '当前仅支持 Windows 本地进程管理')
 
+    if PLATFORM_IS_WINDOWS:
+        return _stop_local_service_windows(service_key)
+    return _stop_local_service_unix(service_key)
+
+
+def _stop_local_service_windows(service_key: str) -> List[int]:
+    """Stops a service on Windows using PowerShell CIM queries."""
     repo_q = _ps_quote(REPO_ROOT)
     minio_data_q = _ps_quote(MINIO_DATA_DIR)
     if service_key == 'crawler':
@@ -454,6 +531,32 @@ def _stop_local_service(service: str) -> List[int]:
     if isinstance(killed, list):
         return [int(v) for v in killed]
     return [int(killed)]
+
+
+def _stop_local_service_unix(service_key: str) -> List[int]:
+    """Stops a service on macOS/Linux using ps + kill."""
+    proc_status = _collect_process_status()
+    pids = proc_status.get(f'{service_key}_pids', [])
+    if not pids:
+        return []
+
+    killed: List[int] = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except OSError:
+            pass
+
+    time.sleep(0.5)
+    for pid in killed:
+        try:
+            os.kill(pid, 0)
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    return killed
 
 
 @app.exception_handler(LoginRedirect)

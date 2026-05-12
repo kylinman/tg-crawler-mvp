@@ -144,13 +144,23 @@ docker compose up crawler
 
 ### 一键本地脚本（推荐）
 
-仓库已提供无 Docker 的 PowerShell 脚本，见 `scripts/local/README.md`：
+仓库已提供无 Docker 的脚本，支持 Windows / macOS / Linux，见 `scripts/local/README.md`：
 
-```bash
+**Windows（PowerShell）：**
+```powershell
 ./scripts/local/setup-python.ps1
 ./scripts/local/init-db.ps1
-copy .env.local.example .env.local
+Copy-Item .env.local.example .env.local
 ./scripts/local/run-web.ps1
+```
+
+**macOS / Linux（Bash）：**
+```bash
+chmod +x scripts/local/*.sh
+./scripts/local/setup-python.sh
+./scripts/local/init-db.sh
+cp .env.local.example .env.local
+./scripts/local/run-web.sh
 ```
 
 然后登录 Web 后台，通过页面按钮 **一键启动采集链路**（自动拉起 MinIO + crawler）：
@@ -162,8 +172,9 @@ copy .env.local.example .env.local
 
 ```bash
 cd crawler
-python -m venv .venv
-.venv\Scripts\activate   # Windows
+python3 -m venv .venv
+source .venv/bin/activate    # macOS/Linux
+# .venv\Scripts\activate     # Windows
 pip install -r requirements.txt
 # 配置环境变量后
 python main.py

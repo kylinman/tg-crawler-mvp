@@ -131,6 +131,46 @@
 
 ---
 
+## 2026-05-12（跨平台兼容）
+
+### 目标
+
+- 支持 Windows / macOS / Linux 三平台本地部署。
+- 系统控制台（启停服务）在所有平台可用。
+
+### 代码改造
+
+- `scripts/local/`
+  - 新增 Bash 脚本：`setup-python.sh`、`init-db.sh`、`run-web.sh`、`run-crawler.sh`、`run-minio.sh`。
+  - Bash 脚本支持 `.env` / `.env.local` 自动加载。
+  - 单实例检测：Linux 用 `/proc`，macOS 用 `ps` 回退。
+
+- `web/main.py`
+  - 新增 `PLATFORM_IS_WINDOWS` 全局标志，自动选择 `.ps1` 或 `.sh` 脚本。
+  - 新增 `_collect_unix_process_status()`：通过 `ps -eo pid,command` 检测进程。
+  - `_collect_process_status()` 统一入口，自动分流 Windows/Unix。
+  - `_start_local_service_script()`：Windows 用 PowerShell detached，Unix 用 `bash` + `start_new_session`。
+  - `_stop_local_service()`：拆分为 `_stop_local_service_windows()` 和 `_stop_local_service_unix()`。
+  - Unix 停止：先 `SIGTERM`，超时后 `SIGKILL`。
+
+- `README.md`
+  - 增加 macOS / Linux 启动命令示例。
+
+- `scripts/local/README.md`
+  - 每个步骤同时给出 Windows 和 macOS/Linux 命令。
+
+### 验证
+
+- `py_compile web/main.py` 通过。
+- Windows 环境下 smoke test 通过（保持原有行为不变）。
+
+### 风险与回滚
+
+- 风险：macOS/Linux 的 `ps` 解析可能在某些系统上行为差异。
+- 回滚：回退 `web/main.py` 中 `_collect_unix_process_status` 和 `_stop_local_service_unix`，恢复 `os.name == 'nt'` 守卫。
+
+---
+
 ## 模板（后续追加）
 
 ```text
