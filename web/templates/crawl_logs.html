@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}采集日志 - TG Crawler{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">采集日志</h5>
+    <span class="text-muted small">共 {{ pagination.total }} 条</span>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small fw-bold">频道</label>
+                <select name="channel" class="form-select form-select-sm">
+                    <option value="">全部</option>
+                    {% for c in channels %}
+                    <option value="{{ c }}" {% if filters.channel == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold">状态</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">全部</option>
+                    <option value="completed" {% if filters.status == 'completed' %}selected{% endif %}>completed</option>
+                    <option value="partial" {% if filters.status == 'partial' %}selected{% endif %}>partial</option>
+                    <option value="failed" {% if filters.status == 'failed' %}selected{% endif %}>failed</option>
+                    <option value="running" {% if filters.status == 'running' %}selected{% endif %}>running</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small fw-bold">每页</label>
+                <select name="page_size" class="form-select form-select-sm">
+                    <option value="20" {% if filters.page_size == 20 %}selected{% endif %}>20</option>
+                    <option value="50" {% if filters.page_size == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if filters.page_size == 100 %}selected{% endif %}>100</option>
+                    <option value="200" {% if filters.page_size == 200 %}selected{% endif %}>200</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">筛选</button>
+            </div>
+            <div class="col-md-2">
+                <a href="/crawl-logs" class="btn btn-outline-secondary btn-sm w-100">重置</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>频道</th>
+                    <th>开始时间</th>
+                    <th>结束时间</th>
+                    <th>耗时</th>
+                    <th>处理量</th>
+                    <th>新增</th>
+                    <th>错误</th>
+                    <th>状态</th>
+                    <th>错误详情</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td>{{ row.id }}</td>
+                    <td><span class="badge bg-secondary">{{ row.channel_name or '-' }}</span></td>
+                    <td class="small">{{ row.run_started_at or '-' }}</td>
+                    <td class="small">{{ row.run_ended_at or '-' }}</td>
+                    <td class="small">{{ row.duration_sec or 0 }}s</td>
+                    <td>{{ row.messages_processed or 0 }}</td>
+                    <td>{{ row.messages_new or 0 }}</td>
+                    <td>{% if (row.errors_count or 0) > 0 %}<span class="text-danger fw-bold">{{ row.errors_count }}</span>{% else %}0{% endif %}</td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if row.status == 'completed' else ('warning text-dark' if row.status == 'partial' else ('danger' if row.status == 'failed' else 'secondary')) }}">
+                            {{ row.status }}
+                        </span>
+                    </td>
+                    <td class="small" style="max-width:420px;">
+                        {% if row.error_details %}
+                        <details>
+                            <summary>查看 {{ row.errors_count or 0 }} 条</summary>
+                            <pre class="bg-light p-2 border rounded mt-1 mb-0" style="white-space:pre-wrap; max-height:180px; overflow-y:auto;">{{ row.error_details | tojson(indent=2) }}</pre>
+                        </details>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not rows %}
+                <tr><td colspan="10" class="text-center text-muted py-4">暂无采集日志</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if pagination.total_pages > 1 %}
+<nav class="mt-3">
+    <ul class="pagination pagination-sm justify-content-center">
+        {% if pagination.page > 1 %}
+        <li class="page-item"><a class="page-link" href="/crawl-logs?page={{ pagination.page-1 }}{% if page_query %}&{{ page_query }}{% endif %}">上一页</a></li>
+        {% endif %}
+        {% for p in range(1, pagination.total_pages+1) %}
+        {% if p == pagination.page or (p >= pagination.page-2 and p <= pagination.page+2) or p == 1 or p == pagination.total_pages %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}"><a class="page-link" href="/crawl-logs?page={{ p }}{% if page_query %}&{{ page_query }}{% endif %}">{{ p }}</a></li>
+        {% elif p == pagination.page-3 or p == pagination.page+3 %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
+        {% endfor %}
+        {% if pagination.page < pagination.total_pages %}
+        <li class="page-item"><a class="page-link" href="/crawl-logs?page={{ pagination.page+1 }}{% if page_query %}&{{ page_query }}{% endif %}">下一页</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

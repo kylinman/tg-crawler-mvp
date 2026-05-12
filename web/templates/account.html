@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}我的账户 - TG Crawler{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-lg-6">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="mb-3">账户信息</h5>
+                <div class="small mb-1"><strong>用户名:</strong> {{ user.username }}</div>
+                <div class="small mb-1"><strong>角色:</strong> {{ user.role }}</div>
+                <div class="small mb-1"><strong>姓名:</strong> {{ user.full_name or '-' }}</div>
+                <div class="small"><strong>邮箱:</strong> {{ user.email or '-' }}</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h5 class="mb-3">修改密码</h5>
+                <form onsubmit="changePassword(event)">
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">旧密码</label>
+                        <input id="oldPwd" type="password" class="form-control" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">新密码（至少 6 位）</label>
+                        <input id="newPwd" type="password" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">保存</button>
+                </form>
+                <div id="pwdResult" class="small mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function changePassword(event) {
+    event.preventDefault();
+    const fd = new FormData();
+    fd.append('old_password', document.getElementById('oldPwd').value);
+    fd.append('new_password', document.getElementById('newPwd').value);
+
+    const resp = await fetch('/api/account/password', {method: 'POST', body: fd});
+    const payload = await resp.json();
+    const el = document.getElementById('pwdResult');
+    if (!resp.ok || !payload.ok) {
+        el.innerHTML = `<span class="text-danger">${payload.detail || '修改失败'}</span>`;
+        return;
+    }
+    el.innerHTML = '<span class="text-success">密码修改成功</span>';
+    document.getElementById('oldPwd').value = '';
+    document.getElementById('newPwd').value = '';
+}
+</script>
+{% endblock %}

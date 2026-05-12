@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}人物归并详情 - TG Crawler{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h5 class="mb-1">人物归并详情</h5>
+        <div class="text-muted small">{{ group_label }} | 来源帖子 {{ total_messages }} 条 | 媒体 {{ total_media }} 个</div>
+    </div>
+    <a href="/persons" class="btn btn-sm btn-outline-secondary">返回人物检索</a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-2 small">
+            <div class="col-md-3"><strong>昵称:</strong> {{ summary.display_nickname or '-' }}</div>
+            <div class="col-md-3"><strong>编号:</strong> {{ summary.internal_code or '-' }}</div>
+            <div class="col-md-3"><strong>地区:</strong> {{ summary.province or '-' }} {{ summary.city or '' }}</div>
+            <div class="col-md-3"><strong>年龄:</strong> {{ summary.age or '-' }}</div>
+            <div class="col-md-3"><strong>体型:</strong> {{ summary.height or '?' }}/{{ summary.weight or '?' }} {{ summary.cup_size or '' }}</div>
+            <div class="col-md-3"><strong>职业:</strong> {{ summary.occupation or '-' }}</div>
+            <div class="col-md-3"><strong>介绍费:</strong> {{ summary.introduction_fee or '-' }}</div>
+            <div class="col-md-3"><strong>生活费:</strong> {{ summary.monthly_allowance or '-' }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header fw-bold">全部媒体（跨消息汇总）</div>
+    <div class="card-body">
+        <div class="row g-3">
+            {% for m in media_rows %}
+            <div class="col-6 col-md-3 col-xl-2">
+                {% if m.media_type == 'video' %}
+                <video src="{{ m.s3_url }}" controls preload="metadata" style="width:100%;height:140px;object-fit:cover;border-radius:8px"></video>
+                {% elif m.media_type == 'audio' %}
+                <audio src="{{ m.s3_url }}" controls style="width:100%"></audio>
+                {% elif m.media_type == 'document' %}
+                <div class="border rounded p-2 bg-light small" style="height:140px;">
+                    <div class="mb-2">文档</div>
+                    <a href="{{ m.s3_url }}" target="_blank">打开文件</a>
+                </div>
+                {% else %}
+                <a href="{{ m.s3_url }}" target="_blank">
+                    <img src="{{ m.thumb_url or m.s3_url }}" style="width:100%;height:140px;object-fit:cover;border-radius:8px" loading="lazy">
+                </a>
+                {% endif %}
+                <div class="small text-muted mt-1">msg {{ m.telegram_message_id or '-' }} | {{ m.media_type }}</div>
+            </div>
+            {% endfor %}
+            {% if not media_rows %}
+            <div class="text-muted">暂无媒体</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header fw-bold">来源消息列表</div>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>人物ID</th>
+                    <th>MessageID</th>
+                    <th>TG消息ID</th>
+                    <th>频道</th>
+                    <th>时间</th>
+                    <th>媒体</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in source_rows %}
+                <tr>
+                    <td><span class="badge bg-dark">{{ row.person_id }}</span></td>
+                    <td><code>{{ row.message_id }}</code></td>
+                    <td><code>{{ row.telegram_message_id or '-' }}</code></td>
+                    <td><span class="badge bg-secondary">{{ row.channel_name or '-' }}</span></td>
+                    <td class="small">{{ row.telegram_date or '-' }}</td>
+                    <td>{{ row.media_count or 0 }}</td>
+                    <td><span class="badge bg-light text-dark">{{ row.review_status or 'pending' }}</span></td>
+                    <td><a href="/detail/{{ row.message_id }}" class="btn btn-sm btn-outline-primary">详情</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

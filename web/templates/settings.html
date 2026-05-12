@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}采集配置 - TG Crawler{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12 col-xl-9">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="mb-2">个人采集配置</h5>
+                <div class="small text-muted mb-3">用于 SaaS 多用户场景的个人参数存储（当前采集进程仍为单实例）。</div>
+
+                <form onsubmit="saveSettings(event)">
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">TG_API_ID</label>
+                            <input id="tgApiId" class="form-control form-control-sm" value="{{ cfg.tg_api_id or '' }}">
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label small fw-bold">TG_API_HASH</label>
+                            <input id="tgApiHash" class="form-control form-control-sm" value="{{ cfg.tg_api_hash }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">TG_PHONE</label>
+                            <input id="tgPhone" class="form-control form-control-sm" value="{{ cfg.tg_phone }}">
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">代理类型</label>
+                            <input id="proxyType" class="form-control form-control-sm" placeholder="socks5/http" value="{{ cfg.tg_proxy_type }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">代理主机</label>
+                            <input id="proxyHost" class="form-control form-control-sm" value="{{ cfg.tg_proxy_host }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">代理端口</label>
+                            <input id="proxyPort" class="form-control form-control-sm" value="{{ cfg.tg_proxy_port or '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold">代理用户名</label>
+                            <input id="proxyUser" class="form-control form-control-sm" value="{{ cfg.tg_proxy_username }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold">代理密码</label>
+                            <input id="proxyPass" class="form-control form-control-sm" value="{{ cfg.tg_proxy_password }}">
+                        </div>
+                    </div>
+
+                    <div class="mt-2">
+                        <label class="form-label small fw-bold">目标频道（每行一个，可带 @）</label>
+                        <textarea id="targetChannels" rows="8" class="form-control form-control-sm">{{ '\n'.join(cfg.target_channels or []) }}</textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span class="small text-muted">最近更新：{{ cfg.updated_at or '-' }}</span>
+                        <button class="btn btn-sm btn-primary" type="submit">保存配置</button>
+                    </div>
+                </form>
+
+                <div id="settingsResult" class="small mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function saveSettings(event) {
+    event.preventDefault();
+    const fd = new FormData();
+    fd.append('tg_api_id', document.getElementById('tgApiId').value);
+    fd.append('tg_api_hash', document.getElementById('tgApiHash').value);
+    fd.append('tg_phone', document.getElementById('tgPhone').value);
+    fd.append('tg_proxy_type', document.getElementById('proxyType').value);
+    fd.append('tg_proxy_host', document.getElementById('proxyHost').value);
+    fd.append('tg_proxy_port', document.getElementById('proxyPort').value);
+    fd.append('tg_proxy_username', document.getElementById('proxyUser').value);
+    fd.append('tg_proxy_password', document.getElementById('proxyPass').value);
+    fd.append('target_channels', document.getElementById('targetChannels').value);
+
+    const resp = await fetch('/api/settings/crawler', {method: 'POST', body: fd});
+    const payload = await resp.json();
+    const el = document.getElementById('settingsResult');
+    if (!resp.ok || !payload.ok) {
+        el.innerHTML = `<span class="text-danger">${payload.detail || '保存失败'}</span>`;
+        return;
+    }
+    el.innerHTML = `<span class="text-success">保存成功，频道数量 ${payload.channels}</span>`;
+}
+</script>
+{% endblock %}

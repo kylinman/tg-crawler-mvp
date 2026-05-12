@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}系统控制 - TG Crawler{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h5 class="mb-1">本地系统控制台</h5>
+        <div class="small text-muted">目标：只启动 Web 后，在页面里一键拉起 MinIO + Crawler。</div>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-primary" onclick="startAllServices()">一键启动采集链路</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="refreshStatus()">刷新状态</button>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-bold">数据库</div>
+                    <span id="dbBadge" class="badge"></span>
+                </div>
+                <div class="small text-muted" id="dbText">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-bold">Web</div>
+                    <span id="webBadge" class="badge"></span>
+                </div>
+                <div class="small text-muted" id="webText">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-bold">MinIO</div>
+                    <span id="minioBadge" class="badge"></span>
+                </div>
+                <div class="small text-muted mb-2" id="minioText">-</div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-success" onclick="startService('minio')">启动</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="stopService('minio')">停止</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-md-6 col-xl-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div class="fw-bold">Crawler</div>
+                    <span id="crawlerBadge" class="badge"></span>
+                </div>
+                <div class="small text-muted mb-2" id="crawlerText">-</div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-success" onclick="startService('crawler')">启动</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="stopService('crawler')">停止</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <div class="fw-bold mb-2">链路就绪状态</div>
+        <div id="pipelineBadgeLine" class="small"></div>
+        <div id="warningText" class="small text-warning mt-2"></div>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <div class="fw-bold mb-2">操作结果</div>
+        <pre id="actionResult" class="small mb-0" style="white-space:pre-wrap;max-height:220px;overflow:auto;">等待操作...</pre>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentStatus = {{ runtime_status | tojson }};
+
+function setBadge(el, ok) {
+    el.className = 'badge ' + (ok ? 'bg-success' : 'bg-secondary');
+    el.textContent = ok ? '运行中' : '未运行';
+}
+
+function setBoolBadge(el, ok) {
+    el.className = 'badge ' + (ok ? 'bg-success' : 'bg-danger');
+    el.textContent = ok ? '正常' : '异常';
+}
+
+function renderStatus(status) {
+    currentStatus = status;
+
+    const dbOk = !!status.database.reachable;
+    const dbBadge = document.getElementById('dbBadge');
+    setBoolBadge(dbBadge, dbOk);
+    document.getElementById('dbText').textContent = dbOk ? 'PostgreSQL 连接正常' : 'PostgreSQL 不可达';
+
+    const web = status.services.web;
+    setBadge(document.getElementById('webBadge'), !!web.running);
+    document.getElementById('webText').textContent = web.running ? `PID: ${(web.pids || []).join(', ')}` : '未检测到 Web 进程';
+
+    const minio = status.services.minio;
+    const minioOk = !!minio.running && !!minio.api_port_ready;
+    setBadge(document.getElementById('minioBadge'), minioOk);
+    document.getElementById('minioText').textContent = `PID: ${((minio.pids || []).join(', ') || '-')}, API:${minio.api_port_ready ? 'OK' : 'DOWN'} (${minio.api_port}), Console:${minio.console_port_ready ? 'OK' : 'DOWN'} (${minio.console_port})`;
+
+    const crawler = status.services.crawler;
+    setBadge(document.getElementById('crawlerBadge'), !!crawler.running);
+    document.getElementById('crawlerText').textContent = crawler.running ? `PID: ${(crawler.pids || []).join(', ')}` : '未检测到 Crawler 进程';
+
+    const pipelineReady = !!status.ready.crawler_pipeline;
+    document.getElementById('pipelineBadgeLine').innerHTML = pipelineReady
+        ? '<span class="badge bg-success">采集链路已就绪</span> <span class="text-muted ms-1">(DB + MinIO + Crawler)</span>'
+        : '<span class="badge bg-warning text-dark">采集链路未就绪</span> <span class="text-muted ms-1">请点击“一键启动采集链路”</span>';
+
+    const warning = (status.warnings && status.warnings.process_probe) ? String(status.warnings.process_probe) : '';
+    document.getElementById('warningText').textContent = warning ? `进程探测提示: ${warning}` : '';
+}
+
+function showResult(payload) {
+    document.getElementById('actionResult').textContent = JSON.stringify(payload, null, 2);
+}
+
+async function refreshStatus() {
+    const resp = await fetch('/api/system/status');
+    const payload = await resp.json();
+    if (!resp.ok || !payload.ok) {
+        showResult(payload);
+        return;
+    }
+    renderStatus(payload.status);
+    showResult({ok: true, message: '状态已刷新'});
+}
+
+async function postAndRefresh(url) {
+    const resp = await fetch(url, {method: 'POST'});
+    const payload = await resp.json();
+    showResult(payload);
+    if (payload && payload.status) {
+        renderStatus(payload.status);
+    } else {
+        await refreshStatus();
+    }
+}
+
+async function startAllServices() {
+    await postAndRefresh('/api/system/start-all');
+}
+
+async function startService(service) {
+    await postAndRefresh(`/api/system/${service}/start`);
+}
+
+async function stopService(service) {
+    await postAndRefresh(`/api/system/${service}/stop`);
+}
+
+renderStatus(currentStatus);
+</script>
+{% endblock %}

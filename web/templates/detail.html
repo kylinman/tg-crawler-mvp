@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}详情 #{{ msg.id }} - TG Crawler{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <a href="/" class="btn btn-sm btn-outline-secondary">返回列表</a>
+    <div class="btn-group btn-group-sm">
+        {% if prev_msg_id %}<a class="btn btn-outline-secondary" href="/detail/{{ prev_msg_id }}">上一条</a>{% endif %}
+        {% if next_msg_id %}<a class="btn btn-outline-secondary" href="/detail/{{ next_msg_id }}">下一条</a>{% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>消息详情 <span class="text-muted">#{{ msg.telegram_message_id }}</span></span>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-secondary">{{ msg.channel_name }}</span>
+                    {% if msg.is_flagged %}<span class="badge bg-danger">已标记可疑</span>{% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <table class="table table-borderless table-sm">
+                            <tr><td class="text-muted w-25">采集时间</td><td>{{ msg.created_at }}</td></tr>
+                            <tr><td class="text-muted">消息时间</td><td>{{ msg.telegram_date }}</td></tr>
+                            <tr><td class="text-muted">置信度</td><td>
+                                <span class="badge {% if msg.extract_confidence > 0.7 %}bg-success{% elif msg.extract_confidence > 0.4 %}bg-warning text-dark{% else %}bg-danger{% endif %}">
+                                    {{ "%.0f%%"|format((msg.extract_confidence or 0)*100) }}
+                                </span>
+                            </td></tr>
+                            <tr><td class="text-muted">审核状态</td><td><span class="badge bg-primary">{{ msg.review_status or 'pending' }}</span></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        {% if msg.manual_tags %}
+                        <div class="mb-2">
+                            {% for tag in msg.manual_tags %}
+                            <span class="badge bg-dark">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        {% if msg.review_notes %}
+                        <div class="alert alert-light small mb-0">{{ msg.review_notes }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <hr>
+
+                <h6 class="fw-bold mb-3">解析档案</h6>
+                <div class="row g-2 small">
+                    <div class="col-md-3"><strong>昵称:</strong> {{ (profile.display_nickname if profile else None) or (msg.extracted_json.nickname if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>编号:</strong> {{ (profile.internal_code if profile else None) or (msg.extracted_json.code if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>省份:</strong> {{ (profile.province if profile else None) or (msg.extracted_json.province if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>城市:</strong> {{ (profile.city if profile else None) or (msg.extracted_json.city if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>年龄:</strong> {{ (profile.age if profile else None) or (msg.extracted_json.age if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>身高:</strong> {{ (profile.height if profile else None) or (msg.extracted_json.height if msg.extracted_json else None) or '-' }}cm</div>
+                    <div class="col-md-3"><strong>体重:</strong> {{ (profile.weight if profile else None) or (msg.extracted_json.weight if msg.extracted_json else None) or '-' }}kg</div>
+                    <div class="col-md-3"><strong>罩杯:</strong> {{ (profile.cup_size if profile else None) or (msg.extracted_json.cup if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>职业:</strong> {{ (profile.occupation if profile else None) or (msg.extracted_json.occupation if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>介绍费:</strong> {{ (profile.introduction_fee if profile else None) or (msg.extracted_json.intro_fee if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>生活费:</strong> {{ (profile.monthly_allowance if profile else None) or (msg.extracted_json.monthly_allowance if msg.extracted_json else None) or '-' }}</div>
+                    <div class="col-md-3"><strong>客服:</strong> {{ (msg.extracted_json.contacts|join(', ') if msg.extracted_json and msg.extracted_json.contacts else '-') }}</div>
+                </div>
+
+                <hr>
+
+                <h6 class="fw-bold mb-3">原始文本</h6>
+                <pre class="bg-light p-3 rounded small border" style="white-space:pre-wrap; max-height:400px; overflow-y:auto;">{{ msg.text_content }}</pre>
+
+                <details class="small text-muted mt-2">
+                    <summary>查看提取原始 JSON</summary>
+                    <pre class="bg-dark text-light p-2 rounded mt-1" style="max-height:300px; overflow-y:auto;">{{ msg.extracted_json | tojson(indent=2) }}</pre>
+                </details>
+            </div>
+        </div>
+
+        {% if media %}
+        <div class="card mb-3">
+            <div class="card-header fw-bold">媒体文件 ({{ media|length }})</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% for m in media %}
+                    <div class="col-6 col-md-4">
+                        <div class="position-relative">
+                            {% if m.media_type == 'video' %}
+                            <video src="{{ m.s3_url }}" class="media-thumb" controls preload="metadata"></video>
+                            {% elif m.media_type == 'audio' %}
+                            <audio src="{{ m.s3_url }}" controls style="width:100%"></audio>
+                            <div class="mt-2 small"><a href="{{ m.s3_url }}" target="_blank">打开音频文件</a></div>
+                            {% elif m.media_type == 'document' %}
+                            <div class="border rounded p-3 bg-light small">
+                                <div class="mb-2">文档文件</div>
+                                <a href="{{ m.s3_url }}" target="_blank">打开文件</a>
+                            </div>
+                            {% else %}
+                            <a href="{{ m.s3_url }}" target="_blank">
+                                <img src="{{ m.thumb_url or m.s3_url }}" class="media-thumb" loading="lazy">
+                            </a>
+                            {% endif %}
+                            {% if m.ocr_text %}
+                            <span class="position-absolute top-0 end-0 badge bg-dark m-2" title="OCR">OCR</span>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <span class="small text-muted">{{ (m.file_size / 1024)|round(1) if m.file_size else 0 }}KB</span>
+                            <span class="badge bg-light text-dark">{{ m.media_type }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if logs %}
+        <div class="card">
+            <div class="card-header fw-bold">操作日志</div>
+            <div class="card-body">
+                <ul class="list-unstyled small mb-0">
+                    {% for log in logs %}
+                    <li class="mb-1">
+                        <span class="text-muted">{{ log.created_at }}</span>
+                        <span class="fw-bold">{{ log.reviewer_name or '系统' }}</span>
+                        <span class="badge bg-light text-dark">{{ log.action }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card sticky-review mb-3">
+            <div class="card-header bg-primary text-white fw-bold">审核操作</div>
+            <div class="card-body">
+                <form id="reviewForm" onsubmit="submitReview(event)">
+                    <div class="mb-3">
+                        <label class="form-label">审核状态</label>
+                        <select name="review_status" id="r_status" class="form-select">
+                            <option value="pending" {% if msg.review_status=='pending' %}selected{% endif %}>待审核</option>
+                            <option value="approved" {% if msg.review_status=='approved' %}selected{% endif %}>已通过</option>
+                            <option value="rejected" {% if msg.review_status=='rejected' %}selected{% endif %}>已拒绝</option>
+                            <option value="need_review" {% if msg.review_status=='need_review' %}selected{% endif %}>需复核</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <textarea name="review_notes" id="r_notes" class="form-control" rows="3">{{ msg.review_notes or '' }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">标签（逗号分隔）</label>
+                        <input type="text" name="manual_tags" id="r_tags" class="form-control" value="{{ msg.manual_tags|join(', ') if msg.manual_tags else '' }}">
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input class="form-check-input" type="checkbox" id="r_flagged" {% if msg.is_flagged %}checked{% endif %}>
+                        <label class="form-check-label text-danger" for="r_flagged">标记为可疑</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">保存审核</button>
+                    <div id="reviewResult" class="mt-2 small"></div>
+                </form>
+                <div class="d-flex flex-wrap gap-1 mt-2">
+                    <span class="badge bg-secondary" style="cursor:pointer" onclick="addTag('高价值')">高价值</span>
+                    <span class="badge bg-secondary" style="cursor:pointer" onclick="addTag('需核实')">需核实</span>
+                    <span class="badge bg-secondary" style="cursor:pointer" onclick="addTag('重复')">重复</span>
+                    <span class="badge bg-secondary" style="cursor:pointer" onclick="addTag('虚假信息')">虚假信息</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header fw-bold">人工修正档案</div>
+            <div class="card-body">
+                <form id="profileForm" onsubmit="submitProfile(event)">
+                    <div class="row g-2">
+                        <div class="col-6"><input class="form-control form-control-sm" name="display_nickname" placeholder="昵称" value="{{ (profile.display_nickname if profile else None) or (msg.extracted_json.nickname if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="internal_code" placeholder="编号" value="{{ (profile.internal_code if profile else None) or (msg.extracted_json.code if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="province" placeholder="省份" value="{{ (profile.province if profile else None) or (msg.extracted_json.province if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="city" placeholder="城市" value="{{ (profile.city if profile else None) or (msg.extracted_json.city if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-4"><input class="form-control form-control-sm" name="age" placeholder="年龄" value="{{ (profile.age if profile else None) or (msg.extracted_json.age if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-4"><input class="form-control form-control-sm" name="height" placeholder="身高" value="{{ (profile.height if profile else None) or (msg.extracted_json.height if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-4"><input class="form-control form-control-sm" name="weight" placeholder="体重" value="{{ (profile.weight if profile else None) or (msg.extracted_json.weight if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="cup_size" placeholder="罩杯" value="{{ (profile.cup_size if profile else None) or (msg.extracted_json.cup if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="occupation" placeholder="职业" value="{{ (profile.occupation if profile else None) or (msg.extracted_json.occupation if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="introduction_fee" placeholder="介绍费" value="{{ (profile.introduction_fee if profile else None) or (msg.extracted_json.intro_fee if msg.extracted_json else '') or '' }}"></div>
+                        <div class="col-6"><input class="form-control form-control-sm" name="monthly_allowance" placeholder="生活费" value="{{ (profile.monthly_allowance if profile else None) or (msg.extracted_json.monthly_allowance if msg.extracted_json else '') or '' }}"></div>
+                    </div>
+                    <button class="btn btn-outline-primary btn-sm w-100 mt-2" type="submit">保存档案修正</button>
+                    <div id="profileResult" class="mt-2 small"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function submitReview(e) {
+    e.preventDefault();
+    const form = e.target;
+    const data = new FormData(form);
+    data.append('is_flagged', document.getElementById('r_flagged').checked ? 'true' : 'false');
+
+    const res = await fetch('/api/messages/{{ msg.id }}/review', {
+        method: 'POST',
+        body: data
+    });
+
+    const result = document.getElementById('reviewResult');
+    if (res.ok) {
+        result.innerHTML = '<div class="alert alert-success py-1">保存成功</div>';
+        setTimeout(() => location.reload(), 500);
+    } else {
+        result.innerHTML = '<div class="alert alert-danger py-1">保存失败</div>';
+    }
+}
+
+async function submitProfile(e) {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const res = await fetch('/api/messages/{{ msg.id }}/profile', {
+        method: 'POST',
+        body: data,
+    });
+
+    const result = document.getElementById('profileResult');
+    if (res.ok) {
+        result.innerHTML = '<div class="alert alert-success py-1">档案已更新</div>';
+        setTimeout(() => location.reload(), 600);
+    } else {
+        result.innerHTML = '<div class="alert alert-danger py-1">档案更新失败</div>';
+    }
+}
+
+function addTag(tag) {
+    const tagInput = document.getElementById('r_tags');
+    const current = tagInput.value.split(',').map((x) => x.trim()).filter((x) => x);
+    if (!current.includes(tag)) {
+        current.push(tag);
+    }
+    tagInput.value = current.join(', ');
+}
+</script>
+{% endblock %}
