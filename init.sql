@@ -42,6 +42,10 @@ CREATE INDEX IF NOT EXISTS idx_messages_review ON messages(review_status, extrac
 CREATE INDEX IF NOT EXISTS idx_messages_flagged ON messages(is_flagged) WHERE is_flagged = true;
 CREATE INDEX IF NOT EXISTS idx_messages_raw_gin ON messages USING GIN(raw_json);
 
+-- media_group 相关索引（支持图集字段继承、回填、人物归并查询，Phase 0 优化）
+CREATE INDEX IF NOT EXISTS idx_messages_media_group ON messages(channel_id, media_group_id);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_media_group ON messages(channel_id, media_group_id, telegram_date DESC);
+
 -- 档案表（从 extracted_json 规范化，可手动修正）
 CREATE TABLE IF NOT EXISTS profiles (
     id BIGSERIAL PRIMARY KEY,
