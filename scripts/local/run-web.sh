@@ -61,4 +61,4 @@ fi
 
 echo "Starting web on port $PORT..."
 cd "$WEB_DIR"
-exec "$PYTHON_BIN" -m uvicorn main:app --host 0.0.0.0 --port "$PORT" --reload
+PYTHONPATH="$REPO_ROOT" exec "$PYTHON_BIN" -m uvicorn main:app --host 0.0.0.0 --port "$PORT" --reload

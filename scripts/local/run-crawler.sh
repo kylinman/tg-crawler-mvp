@@ -71,4 +71,4 @@ fi
 
 echo "Starting crawler (owner_user_id=${CRAWLER_OWNER_USER_ID:-0})..."
 cd "$CRAWLER_DIR"
-exec "$PYTHON_BIN" main.py
+PYTHONPATH="$REPO_ROOT" exec "$PYTHON_BIN" main.py
