@@ -30,7 +30,9 @@ services:
       - "9001:9001"
 
   crawler:
-    build: ./crawler
+    build:
+      context: .
+      dockerfile: crawler/Dockerfile
     environment:
       DATABASE_URL: postgresql://tguser:tgpwd@postgres:5432/tg_crawler
       S3_ENDPOINT: http://minio:9000
@@ -54,17 +56,20 @@ services:
       DEDUP_LLM_TIMEOUT_SEC: ${DEDUP_LLM_TIMEOUT_SEC:-60}
       DEDUP_CANDIDATE_LIMIT: ${DEDUP_CANDIDATE_LIMIT:-40}
     volumes:
-      - ./crawler:/app
+      - .:/app
       - tg_session:/app/session
+    working_dir: /app/crawler
     depends_on:
       postgres:
         condition: service_healthy
       minio:
         condition: service_started
-    command: python main.py
+    command: PYTHONPATH=/app python main.py
 
   web:
-    build: ./web
+    build:
+      context: .
+      dockerfile: web/Dockerfile
     environment:
       DATABASE_URL: postgresql://tguser:tgpwd@postgres:5432/tg_crawler
       S3_ENDPOINT: http://minio:9000
@@ -75,9 +80,13 @@ services:
       ADMIN_SECRET: change-me-in-production
     ports:
       - "8080:8080"
+    volumes:
+      - .:/app
+    working_dir: /app/web
     depends_on:
       - postgres
       - minio
+    command: PYTHONPATH=/app uvicorn main:app --host 0.0.0.0 --port 8080
 
 volumes:
   pg_data:

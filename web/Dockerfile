@@ -5,10 +5,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+# Copy shared code first (Phase 0 optimization for common/ module)
+COPY common ./common
+COPY web/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy web code
+COPY web ./web
 
 EXPOSE 8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# PYTHONPATH for common imports; compose may override command and working_dir
+CMD ["sh", "-c", "PYTHONPATH=/app uvicorn --app-dir /app/web main:app --host 0.0.0.0 --port 8080"]
