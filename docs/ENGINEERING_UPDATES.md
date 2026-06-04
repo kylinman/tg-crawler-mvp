@@ -171,6 +171,63 @@
 
 ---
 
+## 2026-05（全局优化文档与路线图）
+
+### 目标
+- 系统梳理当前项目的全局优化机会（架构、性能、可靠性、安全、工程化）。
+- 产出可执行的分阶段路线图，便于团队对齐优先级和跟踪进度。
+- 保持与现有工程规范一致（Google 风格、更新日志模板、风险回滚描述）。
+
+### 代码改造
+- 新增 `docs/OPTIMIZATION_ROADMAP.md`（完整文档，含执行摘要、现状评估、10+ 优化领域详解、4 阶段路线图、实施原则、参考代码位置）。
+- 在 `README.md`「工程规范与更新记录」章节增加路线图链接。
+- 本条目作为首次记录追加到 ENGINEERING_UPDATES.md。
+
+### 验证
+- 文档内容覆盖此前代码审查发现的所有高影响点（重复代码、media_group 索引缺失、连接池、配置碎片、同步阻塞媒体处理、MinIO 公开策略、零测试等）。
+- 文档结构与项目现有风格保持一致（中文、表格、文件行号引用、Phase 风险回滚描述）。
+- `git status` 显示新增文档及 README/ENGINEERING_UPDATES 指向更新。
+
+### 风险与回滚
+- 风险：路线图内容随后续实现可能需要修订（正常）。
+- 回滚：删除或重命名 OPTIMIZATION_ROADMAP.md，恢复 README 和本文件中的引用即可（低风险）。
+
+---
+
+## 2026-05（Phase 0 优化实施：共享模块、索引、去重、Docker 适配）
+
+### 目标
+- 启动 OPTIMIZATION_ROADMAP Phase 0：消除重复代码、添加关键索引、统一工具函数、修复 Docker 构建以支持 common/ 模块、清理残留 print/死 import、改进部分异常处理。
+- 保持向后兼容（别名 + 最小调用站点变更）。
+- 所有变更通过 py_compile 和基本 import 验证。
+
+### 代码改造
+- **init.sql**：新增 `idx_messages_media_group` 和 `idx_messages_channel_media_group` 索引（支持图集回填、查询）。
+- **common/**（新建）：
+  - `__init__.py`、`normalize.py`（normalize_code / normalize_code_key）
+  - `extracted.py`（EXTRACTED_PROFILE_KEYS、has_meaningful_extracted、parse_int/parse_float/parse_bool 及别名、is_empty_value、parse_extracted_value、merge_extracted、extracted_score）
+- **crawler/db.py**：删除本地重复定义，通过 from common 导入 + alias 保持兼容，移除 unused re import。
+- **crawler/main.py**：调整 import；删除 3 个重复的静态方法（_parse_extracted_value、_merge_extracted、_extracted_score）；更新所有调用为直接函数调用；改进 proxy ImportError 和 disconnect/OCR 的异常处理 + logging。
+- **web/main.py**：添加 common import；将 _parse_* 和 _normalize_* 替换为指向 common 的 alias（删除重复实现）；移除不再需要的 `import re`。
+- **crawler/uploader.py**：修复 __import__('datetime') 为正常 import；将 thumb fail print 改为 logger.warning。
+- **crawler/extractor.py**：移除未使用的 `from datetime import datetime`。
+- **web/main.py**：将默认 admin print 改为 LOGGER.info。
+- **docker-compose.yml + Dockerfiles**：将 build 改为 root context + 显式 dockerfile；更新 volumes/working_dir/command 使用 PYTHONPATH=/app 支持 common/ 导入；Dockerfile 内显式 COPY common + 子目录代码；调整 CMD 以 PYTHONPATH 运行。
+- 同步更新了部分 except Exception 为更具体的 ImportError / 带日志的版本。
+
+### 验证
+- `python -m py_compile` 全部相关文件通过（common/*、crawler/*、web/main.py）。
+- 基本 import 测试：`from common...` 成功，normalize/parse 行为正确。
+- 重复代码大幅减少（db.py + main.py 净删 ~140 行逻辑）。
+- Docker 配置现在支持共享模块（本地 volume .:/app + PYTHONPATH）。
+- 符合 Google 风格 + 路线图规范。
+
+### 风险与回滚
+- 风险：Docker 变更可能影响某些本地 compose 工作流（已测试结构）；web 内部 _parse_* 仍通过 alias 暴露，调用站点无需立即改。
+- 回滚：git revert 对应 commit；或临时把 common 逻辑复制回原位置并恢复 compose/Dockerfile 即可（低风险，Phase 0 设计时已考虑兼容）。
+
+---
+
 ## 模板（后续追加）
 
 ```text
