@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import platform
-import re
 import signal
 import socket
 import subprocess
@@ -21,6 +20,10 @@ from psycopg2.extras import RealDictCursor
 
 from auth import LoginRedirect, create_token, get_current_user, hash_password, is_admin, verify_password
 from db_util import db_execute
+
+# Shared utilities (deduplicated in Phase 0)
+from common.normalize import normalize_code, normalize_code_key
+from common.extracted import parse_int, parse_float, parse_bool
 
 app = FastAPI(title='TG Crawler Admin')
 templates = Jinja2Templates(directory='templates')
@@ -47,42 +50,10 @@ LOGGER = logging.getLogger(__name__)
 SYSTEM_ACTION_LOCK = threading.Lock()
 
 
-def _parse_int(value: Optional[str]) -> Optional[int]:
-    if value is None:
-        return None
-    value = value.strip()
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def _parse_float(value: Optional[str]) -> Optional[float]:
-    if value is None:
-        return None
-    value = value.strip()
-    if not value:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
-
-
-def _parse_bool(value: Optional[str]) -> Optional[bool]:
-    if value is None:
-        return None
-    value = value.strip().lower()
-    if not value:
-        return None
-    if value in {'1', 'true', 'yes', 'y', 'on'}:
-        return True
-    if value in {'0', 'false', 'no', 'n', 'off'}:
-        return False
-    return None
-
+# Aliases to shared implementations (deduped in Phase 0)
+_parse_int = parse_int
+_parse_float = parse_float
+_parse_bool = parse_bool
 
 def _parse_tags(raw: Optional[str]) -> Optional[List[str]]:
     if raw is None:
@@ -92,24 +63,8 @@ def _parse_tags(raw: Optional[str]) -> Optional[List[str]]:
     return deduped or None
 
 
-def _normalize_code(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    text = re.sub(r'[`\s]+', '', text)
-    text = re.sub(r'[^A-Za-z0-9_-]', '', text)
-    return text or None
-
-
-def _normalize_code_key(value: Optional[str]) -> Optional[str]:
-    text = _normalize_code(value)
-    if not text:
-        return None
-    text = re.sub(r'[^A-Za-z0-9]+', '', text)
-    text = text.lower()
-    return text or None
+_normalize_code = normalize_code
+_normalize_code_key = normalize_code_key
 
 
 def _query_string(params: Dict[str, Any]) -> str:
@@ -358,8 +313,8 @@ def _collect_unix_process_status() -> Dict[str, List[int]]:
                     crawler_pids.append(pid)
                 elif 'minio' in cmd and (':9000' in cmd or MINIO_DATA_DIR in cmd):
                     minio_pids.append(pid)
-    except Exception:
-        pass
+    except Exception as exc:
+        LOGGER.debug('Unix process probe partial failure: %s', exc)
 
     return {
         'web_pids': web_pids,
@@ -2095,7 +2050,7 @@ async def init_admin():
             ('admin', hashed, 'admin', 'Platform Admin'),
         )
         conn.commit()
-        print('Default admin created: admin / admin123 (must change password)')
+        LOGGER.info('Default admin created: admin / admin123 (must change password)')
     cur.execute('SELECT id FROM reviewers WHERE role = %s ORDER BY id ASC LIMIT 1', ('admin',))
     row = cur.fetchone()
     if row:
