@@ -227,6 +227,7 @@ uvicorn main:app --reload --port 8080
 
 - Python Google 风格基线：`docs/PYTHON_GOOGLE_STYLE_BASELINE.md`
 - 持续更新日志：`docs/ENGINEERING_UPDATES.md`
+- 全局优化计划与路线图：`docs/OPTIMIZATION_ROADMAP.md`（含分阶段交付、验证标准与风险回滚）
 
 ---
 
