@@ -1,98 +1,21 @@
 import psycopg2
-import re
 from psycopg2.extras import RealDictCursor, Json, execute_values
 from config import Config
 
-EXTRACTED_PROFILE_KEYS = {
-    'nickname',
-    'code',
-    'province',
-    'city',
-    'age',
-    'height',
-    'weight',
-    'cup',
-    'occupation',
-    'is_virgin',
-    'oral',
-    'creampie',
-    'condomless',
-    'sm',
-    'tattoo',
-    'out_province',
-    'overnight',
-    'cohabitation',
-    'monthly_allowance',
-    'intro_fee',
-    'contacts',
-    'tags',
-}
+# Re-export shared utilities so existing imports from db continue to work
+# during transition. New code should import directly from common.
+from common.extracted import (
+    EXTRACTED_PROFILE_KEYS,
+    has_meaningful_extracted,
+    parse_int as _to_int,
+    parse_float as _to_float,
+    parse_bool as _to_bool,
+    is_empty_value as _is_empty_value,
+)
+from common.normalize import normalize_code as _normalize_code
 
-
-def _to_int(value):
-    if value in (None, ''):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _to_float(value):
-    if value in (None, ''):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _to_bool(value):
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value).strip().lower()
-    if text in {'1', 'true', 'yes', 'y', 'on', 'ok'}:
-        return True
-    if text in {'0', 'false', 'no', 'n', 'off'}:
-        return False
-    return None
-
-
-def _normalize_code(value):
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    text = re.sub(r'[`\s]+', '', text)
-    text = re.sub(r'[^A-Za-z0-9_-]', '', text)
-    return text or None
-
-
-def _is_empty_value(value):
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return not value.strip()
-    if isinstance(value, (list, tuple, set, dict)):
-        return len(value) == 0
-    return False
-
-
-def has_meaningful_extracted(extracted):
-    """Returns True when extracted payload has at least one person field value."""
-    if not isinstance(extracted, dict) or not extracted:
-        return False
-    for key in EXTRACTED_PROFILE_KEYS:
-        if key not in extracted:
-            continue
-        if not _is_empty_value(extracted.get(key)):
-            return True
-    return False
+# Keep the public name for backward compat with crawler/main.py imports
+__all__ = ["Database", "has_meaningful_extracted", "EXTRACTED_PROFILE_KEYS"]
 
 class Database:
     def __init__(self):

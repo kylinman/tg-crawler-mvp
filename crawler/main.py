@@ -11,7 +11,13 @@ from telethon import TelegramClient
 from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 from psycopg2.extras import Json
 from config import Config
-from db import Database, has_meaningful_extracted
+from db import Database
+from common.extracted import (
+    has_meaningful_extracted,
+    parse_extracted_value,
+    merge_extracted,
+    extracted_score,
+)
 from extractor import LooseExtractor
 from uploader import MinIOUploader
 from dedupe_llm import LLMDeduper
@@ -101,7 +107,7 @@ class IncrementalCrawler:
 
         try:
             import socks
-        except Exception:
+        except ImportError:
             logger.error('Proxy configured but PySocks is missing. Please install pysocks.')
             return None
 
@@ -175,8 +181,8 @@ class IncrementalCrawler:
         finally:
             try:
                 await self.client.disconnect()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug('Ignoring error during client disconnect: %s', exc)
             try:
                 self.db.release_lock(CRAWLER_LOCK_KEY)
             except Exception as e:
@@ -188,47 +194,6 @@ class IncrementalCrawler:
         if len(error_details) >= limit:
             return
         error_details.append(text[:500])
-
-    @staticmethod
-    def _parse_extracted_value(extracted_value: Any) -> Dict[str, Any]:
-        """Normalizes extracted_json value to dict."""
-        if isinstance(extracted_value, dict):
-            return extracted_value
-        if isinstance(extracted_value, str):
-            try:
-                loaded = json.loads(extracted_value)
-                if isinstance(loaded, dict):
-                    return loaded
-            except Exception:
-                return {}
-        return {}
-
-    @staticmethod
-    def _merge_extracted(base: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
-        """Fills missing person fields from fallback extracted payload."""
-        merged = dict(base or {})
-        for key, value in (fallback or {}).items():
-            if key.startswith('_'):
-                continue
-            if key not in merged or merged.get(key) in (None, '', [], {}):
-                merged[key] = value
-
-        if '_found_fields' in fallback:
-            merged['_found_fields'] = max(int(base.get('_found_fields') or 0), int(fallback.get('_found_fields') or 0))
-        if 'confidence' in fallback:
-            merged['confidence'] = max(float(base.get('confidence') or 0), float(fallback.get('confidence') or 0))
-        if '_status' in fallback and (base.get('_status') in (None, '', 'failed')):
-            merged['_status'] = fallback.get('_status')
-        return merged
-
-    @staticmethod
-    def _extracted_score(extracted: Dict[str, Any]) -> int:
-        score = int(extracted.get('_found_fields') or 0)
-        if extracted.get('code'):
-            score += 100
-        if extracted.get('nickname'):
-            score += 20
-        return score
 
     def _apply_media_group_extracted(self, batch: List[dict], media_group_cache: Dict[int, Dict[str, Any]]):
         """Propagates best extracted result to media-only siblings in same album."""
@@ -246,7 +211,7 @@ class IncrementalCrawler:
                 continue
 
             current = grouped_candidates.get(group_id)
-            score = self._extracted_score(extracted)
+            score = extracted_score(extracted)
             if current is None or score > current['score']:
                 grouped_candidates[group_id] = {'score': score, 'extracted': dict(extracted)}
 
@@ -270,7 +235,7 @@ class IncrementalCrawler:
             if has_meaningful_extracted(current):
                 continue
 
-            merged = self._merge_extracted(current, candidate['extracted'])
+            merged = merge_extracted(current, candidate['extracted'])
             item['extracted_obj'] = merged
             item['extracted_json'] = json.dumps(merged)
             item['extract_confidence'] = merged.get('confidence', 0)
@@ -295,7 +260,7 @@ class IncrementalCrawler:
 
         count = 0
         for row in rows:
-            extracted = self._parse_extracted_value(row[1] if len(row) > 1 else None)
+            extracted = parse_extracted_value(row[1] if len(row) > 1 else None)
             if self.db.upsert_profile_from_extracted(row[0], extracted, owner_user_id=self.owner_user_id):
                 count += 1
         return count
@@ -408,7 +373,7 @@ class IncrementalCrawler:
             for row in rows:
                 msg_id = row[0]
                 extracted_json = row[1]
-                extracted = self._parse_extracted_value(extracted_json)
+                extracted = parse_extracted_value(extracted_json)
 
                 if not has_meaningful_extracted(extracted):
                     profile_extracted = self._extracted_from_profile_fields(
@@ -425,12 +390,12 @@ class IncrementalCrawler:
                         row[12],
                     )
                     if has_meaningful_extracted(profile_extracted):
-                        extracted = self._merge_extracted(extracted, profile_extracted)
+                        extracted = merge_extracted(extracted, profile_extracted)
 
                 parsed_rows.append((msg_id, extracted))
                 if not has_meaningful_extracted(extracted):
                     continue
-                score = self._extracted_score(extracted)
+                score = extracted_score(extracted)
                 if score > best_score:
                     best_score = score
                     best_extracted = extracted
@@ -439,7 +404,7 @@ class IncrementalCrawler:
                 continue
 
             for msg_id, extracted in parsed_rows:
-                merged = self._merge_extracted(extracted, best_extracted)
+                merged = merge_extracted(extracted, best_extracted)
                 if merged != extracted:
                     self.db.execute(
                         """
@@ -670,8 +635,8 @@ class IncrementalCrawler:
                     try:
                         import pytesseract
                         ocr_text = pytesseract.image_to_string(str(local_path), lang='chi_sim')
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug('OCR skipped for %s: %s', local_path, exc)
 
                 self.db.insert_media(
                     message_db_id,

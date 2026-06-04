@@ -6,6 +6,10 @@ from pathlib import Path
 from PIL import Image
 import io
 import json
+import datetime
+import logging
+
+logger = logging.getLogger('crawler')
 
 class MinIOUploader:
     def __init__(self):
@@ -38,7 +42,7 @@ class MinIOUploader:
 
     def upload_media(self, local_path: str, channel: str, message_id: int, seq: int = 0) -> dict:
         ext = Path(local_path).suffix or '.bin'
-        date_folder = __import__('datetime').datetime.now().strftime('%Y/%m/%d')
+        date_folder = datetime.datetime.now().strftime('%Y/%m/%d')
         s3_key = f"{channel}/{date_folder}/{message_id}_{seq}{ext}"
         content_type = mimetypes.guess_type(local_path)[0] or 'application/octet-stream'
 
@@ -61,7 +65,7 @@ class MinIOUploader:
                         Body=thumb_buffer, ContentType='image/jpeg'
                     )
             except Exception as e:
-                print(f"Thumb fail {local_path}: {e}")
+                logger.warning("Thumb generation failed for %s: %s", local_path, e)
                 thumb_key = None
 
         base = self.public_endpoint
