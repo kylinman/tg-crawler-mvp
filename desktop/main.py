@@ -18,13 +18,15 @@ import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QTabWidget, QLabel, QPushButton, QStatusBar, QMessageBox,
-    QLineEdit, QComboBox, QTableWidget, QTableWidgetItem, QHeaderView
+    QLineEdit, QComboBox, QTableWidget, QTableWidgetItem, QHeaderView,
+    QGroupBox, QFormLayout, QSplitter, QTextEdit, QFrame, QToolBar, QMenu
 )
-from PySide6.QtCore import Qt, QTimer, QSettings
+from PySide6.QtCore import Qt, QTimer, QSettings, QSize
+from PySide6.QtGui import QAction, QIcon, QFont
 from typing import Optional
-from PySide6.QtGui import QAction
+
 
 # Make sure we can import from project root (common/, etc.)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -45,9 +47,18 @@ class MainWindow(QMainWindow):
 
         self.settings = QSettings("tg-crawler", "desktop")
 
+        # Load settings early
+        self._load_connection_settings()
+
+        # Modern Qt6 styling
+        self._apply_modern_style()
+
         # Central tabs
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
+
+        # Modern top toolbar
+        self._create_toolbar()
 
         # Placeholder tabs - will be replaced with real widgets
         self._setup_messages_tab()
@@ -70,7 +81,6 @@ class MainWindow(QMainWindow):
         self.refresh_timer.start(5000)  # 5s
 
         self.db: Optional[DesktopDB] = None
-        self._load_connection_settings()
         self._try_connect_db()
 
     def _create_menu(self):
@@ -86,113 +96,428 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
+    def _create_toolbar(self):
+        """Modern Qt toolbar with common actions."""
+        toolbar = QToolBar("Main Toolbar")
+        toolbar.setIconSize(QSize(18, 18))
+        self.addToolBar(toolbar)
+
+        # Refresh action
+        refresh_action = QAction("Refresh", self)
+        refresh_action.triggered.connect(self._refresh_current_tab)
+        toolbar.addAction(refresh_action)
+
+        toolbar.addSeparator()
+
+        # Quick ops actions (modern buttons in toolbar)
+        start_action = QAction("▶ Start All", self)
+        start_action.triggered.connect(self._stub_start_all)
+        toolbar.addAction(start_action)
+
+        stop_action = QAction("■ Stop Crawler", self)
+        stop_action.triggered.connect(lambda: self.status_bar.showMessage("Stop action (extend with real controller)", 2000))
+        toolbar.addAction(stop_action)
+
+        toolbar.addSeparator()
+
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self._show_about)
+        toolbar.addAction(about_action)
+
+    def _refresh_current_tab(self):
+        if self.tabs.currentIndex() == 0:  # Messages
+            self._refresh_messages()
+        else:
+            self.status_bar.showMessage("Refresh for current tab (stub)", 1500)
+
+    def _save_settings(self):
+        self.db_url = self.db_url_edit.text().strip()
+        self.settings.setValue("db_url", self.db_url)
+        self.status_bar.showMessage("Settings saved (reconnect on next action)", 2000)
+        self._try_connect_db()
+
+    def _apply_modern_style(self):
+        """Apply a clean, modern Qt6 flat design stylesheet."""
+        style = """
+            QMainWindow {
+                background-color: #f8f9fa;
+            }
+            QTabWidget::pane {
+                border: 1px solid #dee2e6;
+                background: white;
+                border-radius: 4px;
+            }
+            QTabBar::tab {
+                background: #e9ecef;
+                color: #495057;
+                padding: 10px 20px;
+                border: 1px solid #dee2e6;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background: white;
+                color: #212529;
+                font-weight: 600;
+            }
+            QTabBar::tab:hover {
+                background: #dee2e6;
+            }
+            QPushButton {
+                background-color: #0d6efd;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #0b5ed7;
+            }
+            QPushButton:pressed {
+                background-color: #0a58ca;
+            }
+            QPushButton#secondary {
+                background-color: #6c757d;
+            }
+            QPushButton#secondary:hover {
+                background-color: #5c636a;
+            }
+            QLineEdit, QComboBox {
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                padding: 6px 10px;
+                background: white;
+            }
+            QLineEdit:focus, QComboBox:focus {
+                border: 1px solid #86b7fe;
+                outline: none;
+            }
+            QTableWidget {
+                border: 1px solid #dee2e6;
+                gridline-color: #e9ecef;
+                alternate-background-color: #f8f9fa;
+                selection-background-color: #e7f1ff;
+            }
+            QTableWidget::item {
+                padding: 6px;
+            }
+            QHeaderView::section {
+                background-color: #e9ecef;
+                color: #495057;
+                padding: 8px;
+                border: none;
+                border-right: 1px solid #dee2e6;
+                font-weight: 600;
+            }
+            QGroupBox {
+                font-weight: 600;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding-top: 8px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+                color: #212529;
+            }
+            QLabel {
+                color: #212529;
+            }
+            QStatusBar {
+                background: #e9ecef;
+                border-top: 1px solid #dee2e6;
+            }
+            QToolBar {
+                background: #ffffff;
+                border-bottom: 1px solid #dee2e6;
+                spacing: 6px;
+                padding: 4px;
+            }
+            QSplitter::handle {
+                background: #dee2e6;
+            }
+            QFrame#preview {
+                background: #ffffff;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
+            }
+        """
+        self.setStyleSheet(style)
+
+        # Use Fusion style for consistent modern look across platforms
+        QApplication.setStyle("Fusion")
+
     def _setup_messages_tab(self):
         widget = QWidget()
-        layout = QVBoxLayout(widget)
+        main_layout = QVBoxLayout(widget)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(8)
 
-        header = QLabel("<b>Messages</b> — Filter, review and manage extracted Telegram posts (real DB)")
-        layout.addWidget(header)
+        # Header with title and stats
+        header_layout = QHBoxLayout()
+        title = QLabel("Messages")
+        title.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        header_layout.addWidget(title)
 
-        # Simple filter row
-        filter_layout = QHBoxLayout()
+        self.msg_stats_label = QLabel("Total: - | Pending: -")
+        self.msg_stats_label.setStyleSheet("color: #6c757d; font-size: 12px;")
+        header_layout.addStretch()
+        header_layout.addWidget(self.msg_stats_label)
+        main_layout.addLayout(header_layout)
+
+        # Main content splitter: filters | (table + preview)
+        content_splitter = QSplitter(Qt.Horizontal)
+
+        # Left: Filters panel (modern group box + form)
+        filter_box = QGroupBox("Filters")
+        filter_box.setObjectName("filters")
+        filter_form = QFormLayout(filter_box)
+        filter_form.setContentsMargins(12, 12, 12, 12)
+        filter_form.setSpacing(8)
+
         self.msg_keyword = QLineEdit()
-        self.msg_keyword.setPlaceholderText("Keyword (text or extracted)...")
+        self.msg_keyword.setPlaceholderText("Search text or extracted fields...")
+        self.msg_keyword.setClearButtonEnabled(True)
         self.msg_keyword.textChanged.connect(self._refresh_messages)
-        filter_layout.addWidget(QLabel("Search:"))
-        filter_layout.addWidget(self.msg_keyword)
+        filter_form.addRow("Search:", self.msg_keyword)
 
         self.msg_status = QComboBox()
-        self.msg_status.addItems(["", "pending", "approved", "rejected", "need_review"])
-        self.msg_status.currentTextChanged.connect(self._refresh_messages)
-        filter_layout.addWidget(QLabel("Status:"))
-        filter_layout.addWidget(self.msg_status)
+        self.msg_status.addItems(["(any)", "pending", "approved", "rejected", "need_review"])
+        self.msg_status.currentIndexChanged.connect(self._refresh_messages)
+        filter_form.addRow("Review Status:", self.msg_status)
 
+        # Additional modern filters
+        self.msg_has_media = QComboBox()
+        self.msg_has_media.addItems(["(any)", "Yes", "No"])
+        self.msg_has_media.currentIndexChanged.connect(self._refresh_messages)
+        filter_form.addRow("Has Media:", self.msg_has_media)
+
+        self.msg_flagged = QComboBox()
+        self.msg_flagged.addItems(["(any)", "Flagged", "Not Flagged"])
+        self.msg_flagged.currentIndexChanged.connect(self._refresh_messages)
+        filter_form.addRow("Flagged:", self.msg_flagged)
+
+        # Action buttons inside filters
+        filter_actions = QHBoxLayout()
         btn_refresh = QPushButton("Refresh")
+        btn_refresh.setObjectName("secondary")
         btn_refresh.clicked.connect(self._refresh_messages)
-        filter_layout.addWidget(btn_refresh)
-        filter_layout.addStretch()
-        layout.addLayout(filter_layout)
+        filter_actions.addWidget(btn_refresh)
 
-        # Real data table (QTableWidget for simplicity in v1)
+        btn_clear = QPushButton("Clear Filters")
+        btn_clear.setObjectName("secondary")
+        btn_clear.clicked.connect(self._clear_message_filters)
+        filter_actions.addWidget(btn_clear)
+        filter_form.addRow("", filter_actions)
+
+        content_splitter.addWidget(filter_box)
+
+        # Right side: vertical splitter for table + live preview
+        right_splitter = QSplitter(Qt.Vertical)
+
+        # Table
         self.msg_table = QTableWidget(0, 8)
         self.msg_table.setHorizontalHeaderLabels([
             "ID", "Date", "Channel", "Nickname/Code", "Status", "Conf", "Media", "Text (preview)"
         ])
         self.msg_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.msg_table.horizontalHeader().setStretchLastSection(True)
         self.msg_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.msg_table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.msg_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.msg_table.setAlternatingRowColors(True)
         self.msg_table.doubleClicked.connect(self._open_message_detail)
-        layout.addWidget(self.msg_table)
+        self.msg_table.itemSelectionChanged.connect(self._update_preview)
+        # Context menu for modern UX
+        self.msg_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.msg_table.customContextMenuRequested.connect(self._show_message_context_menu)
 
-        # Quick action row
-        action_layout = QHBoxLayout()
-        self.btn_approve = QPushButton("Approve Selected")
+        right_splitter.addWidget(self.msg_table)
+
+        # Live preview panel (modern card)
+        preview_frame = QFrame()
+        preview_frame.setObjectName("preview")
+        preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(12, 8, 12, 8)
+
+        preview_title = QLabel("Selection Preview")
+        preview_title.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        preview_layout.addWidget(preview_title)
+
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        self.preview_text.setMaximumHeight(120)
+        self.preview_text.setPlaceholderText("Select a row to see details...")
+        preview_layout.addWidget(self.preview_text)
+
+        self.preview_meta = QLabel("Extracted fields and metadata will appear here.")
+        self.preview_meta.setWordWrap(True)
+        self.preview_meta.setStyleSheet("color: #6c757d; font-size: 12px;")
+        preview_layout.addWidget(self.preview_meta)
+
+        preview_layout.addStretch()
+        right_splitter.addWidget(preview_frame)
+
+        # Give more space to table
+        right_splitter.setSizes([400, 150])
+
+        content_splitter.addWidget(right_splitter)
+        content_splitter.setSizes([220, 700])  # filters vs content
+
+        main_layout.addWidget(content_splitter)
+
+        # Bottom action toolbar (modern buttons)
+        action_bar = QHBoxLayout()
+        action_bar.setContentsMargins(0, 8, 0, 0)
+
+        self.btn_approve = QPushButton("✓ Approve Selected")
         self.btn_approve.clicked.connect(lambda: self._quick_review("approved"))
-        action_layout.addWidget(self.btn_approve)
+        action_bar.addWidget(self.btn_approve)
 
-        self.btn_reject = QPushButton("Reject Selected")
+        self.btn_reject = QPushButton("✗ Reject Selected")
+        self.btn_reject.setObjectName("secondary")
         self.btn_reject.clicked.connect(lambda: self._quick_review("rejected"))
-        action_layout.addWidget(self.btn_reject)
+        action_bar.addWidget(self.btn_reject)
 
-        self.btn_flag = QPushButton("Toggle Flag")
+        self.btn_flag = QPushButton("⚑ Toggle Flag")
+        self.btn_flag.setObjectName("secondary")
         self.btn_flag.clicked.connect(self._toggle_flag)
-        action_layout.addWidget(self.btn_flag)
-        action_layout.addStretch()
-        layout.addLayout(action_layout)
+        action_bar.addWidget(self.btn_flag)
+
+        action_bar.addStretch()
+
+        btn_detail = QPushButton("Open Detail...")
+        btn_detail.setObjectName("secondary")
+        btn_detail.clicked.connect(self._open_selected_detail)
+        action_bar.addWidget(btn_detail)
+
+        main_layout.addLayout(action_bar)
 
         self.tabs.addTab(widget, "Messages")
 
         # Initial load
-        QTimer.singleShot(300, self._refresh_messages)
+        QTimer.singleShot(400, self._refresh_messages)
 
     def _setup_persons_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Persons / Profiles</b> (grouped by code or media_group)"))
-        placeholder = QLabel("Persons search, grouping (code:/album:/msg:), media preview coming soon.")
-        placeholder.setAlignment(Qt.AlignCenter)
-        placeholder.setStyleSheet("color: gray;")
-        layout.addWidget(placeholder)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        header = QLabel("Persons / Profiles")
+        header.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        layout.addWidget(header)
+
+        # Modern filter + list layout using splitter
+        splitter = QSplitter(Qt.Horizontal)
+
+        filter_box = QGroupBox("Search & Filter")
+        form = QFormLayout(filter_box)
+        self.person_keyword = QLineEdit()
+        self.person_keyword.setPlaceholderText("Name or code...")
+        form.addRow("Keyword:", self.person_keyword)
+        self.person_code = QLineEdit()
+        form.addRow("Code:", self.person_code)
+        btn_search = QPushButton("Search Persons")
+        btn_search.setObjectName("secondary")
+        btn_search.clicked.connect(lambda: self.status_bar.showMessage("Persons search (extend with db.fetch_persons)", 2000))
+        form.addRow(btn_search)
+
+        splitter.addWidget(filter_box)
+
+        list_area = QWidget()
+        list_layout = QVBoxLayout(list_area)
+        list_layout.addWidget(QLabel("Results (grouped by code/album)"))
+        placeholder = QTableWidget(0, 5)
+        placeholder.setHorizontalHeaderLabels(["Person", "Code", "Province", "Recent Date", "Media"])
+        placeholder.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        list_layout.addWidget(placeholder)
+        splitter.addWidget(list_area)
+
+        splitter.setSizes([250, 600])
+        layout.addWidget(splitter)
+
         self.tabs.addTab(widget, "Persons")
 
     def _setup_ops_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Operations & Control</b>"))
+        layout.setContentsMargins(12, 12, 12, 12)
 
-        info = QLabel(
-            "One-click start MinIO + Crawler (using local scripts or direct process management).\n"
-            "Status polling for running services.\n"
-            "Ported/adapted from web/main.py ops logic for cross-platform consistency."
-        )
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        header = QLabel("Operations & Control")
+        header.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        layout.addWidget(header)
 
-        h = QHBoxLayout()
-        self.btn_start_all = QPushButton("▶ Start All (MinIO + Crawler)")
-        self.btn_start_all.clicked.connect(self._stub_start_all)
-        h.addWidget(self.btn_start_all)
+        # Modern service control cards using grid
+        grid = QGridLayout()
 
-        self.btn_stop_crawler = QPushButton("■ Stop Crawler")
-        self.btn_stop_crawler.clicked.connect(lambda: self.status_bar.showMessage("Stop stub", 1500))
-        h.addWidget(self.btn_stop_crawler)
+        # MinIO card
+        minio_box = QGroupBox("MinIO Storage")
+        minio_l = QVBoxLayout(minio_box)
+        minio_l.addWidget(QLabel("Local object storage for media & thumbs"))
+        minio_status = QLabel("Status: (check via polling)")
+        minio_l.addWidget(minio_status)
+        btn_minio = QPushButton("Start MinIO")
+        btn_minio.setObjectName("secondary")
+        btn_minio.clicked.connect(lambda: self.status_bar.showMessage("Start MinIO via script (see web ops logic)", 2000))
+        minio_l.addWidget(btn_minio)
+        grid.addWidget(minio_box, 0, 0)
 
-        layout.addLayout(h)
+        # Crawler card
+        crawler_box = QGroupBox("Telegram Crawler")
+        crawler_l = QVBoxLayout(crawler_box)
+        crawler_l.addWidget(QLabel("Incremental fetch + LLM dedupe + profile extraction"))
+        crawler_status = QLabel("Status: (check via polling)")
+        crawler_l.addWidget(crawler_status)
+        btn_crawler = QPushButton("Start Crawler")
+        btn_crawler.clicked.connect(self._stub_start_all)
+        crawler_l.addWidget(btn_crawler)
+        btn_stop = QPushButton("Stop Crawler")
+        btn_stop.setObjectName("secondary")
+        btn_stop.clicked.connect(lambda: self.status_bar.showMessage("Stop (extend)", 1500))
+        crawler_l.addWidget(btn_stop)
+        grid.addWidget(crawler_box, 0, 1)
 
-        self.service_status = QLabel("Service status: (polling every 5s)")
+        layout.addLayout(grid)
+
+        self.service_status = QLabel("Live service status will update here (every 5s)")
         layout.addWidget(self.service_status)
 
+        layout.addStretch()
         self.tabs.addTab(widget, "Operations")
 
     def _setup_settings_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.addWidget(QLabel("<b>Settings & Connection</b>"))
-        layout.addWidget(QLabel(
-            "DB URL, S3/MinIO endpoints, crawler owner settings.\n"
-            "Per-user crawler config (from user_crawler_settings).\n\n"
-            "Will load from .env / .env.local + allow editing + save to QSettings."
-        ))
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        header = QLabel("Settings & Connection")
+        header.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        layout.addWidget(header)
+
+        # Connection form (modern)
+        conn_box = QGroupBox("Database & Storage")
+        form = QFormLayout(conn_box)
+        self.db_url_edit = QLineEdit(self.db_url if hasattr(self, 'db_url') else "")
+        form.addRow("DATABASE_URL:", self.db_url_edit)
+
+        self.s3_endpoint_edit = QLineEdit("http://localhost:9000")
+        form.addRow("S3_ENDPOINT:", self.s3_endpoint_edit)
+
+        save_btn = QPushButton("Save Settings")
+        save_btn.clicked.connect(self._save_settings)
+        form.addRow(save_btn)
+
+        layout.addWidget(conn_box)
+
+        info = QLabel("Changes take effect on next refresh. Use .env files for persistence across runs.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        layout.addStretch()
         self.tabs.addTab(widget, "Settings")
 
     def _load_connection_settings(self):
@@ -236,13 +561,38 @@ class MainWindow(QMainWindow):
             if not self.db:
                 return
         try:
+            # Map UI filters to DB query (basic support in DesktopDB)
+            status = self.msg_status.currentText()
+            if status == "(any)":
+                status = None
+            keyword = self.msg_keyword.text().strip() or None
+
             rows = self.db.fetch_messages(
-                status=self.msg_status.currentText() or None,
-                keyword=self.msg_keyword.text().strip() or None,
-                limit=200,
+                status=status,
+                keyword=keyword,
+                limit=300,
             )
-            self.msg_table.setRowCount(len(rows))
-            for i, r in enumerate(rows):
+
+            # Client-side filter for additional modern filters (has_media, flagged)
+            has_media_filter = self.msg_has_media.currentText()
+            flagged_filter = self.msg_flagged.currentText()
+
+            filtered_rows = []
+            for r in rows:
+                keep = True
+                if has_media_filter == "Yes" and not r.get("has_media"):
+                    keep = False
+                if has_media_filter == "No" and r.get("has_media"):
+                    keep = False
+                if flagged_filter == "Flagged" and not r.get("is_flagged"):
+                    keep = False
+                if flagged_filter == "Not Flagged" and r.get("is_flagged"):
+                    keep = False
+                if keep:
+                    filtered_rows.append(r)
+
+            self.msg_table.setRowCount(len(filtered_rows))
+            for i, r in enumerate(filtered_rows):
                 self.msg_table.setItem(i, 0, QTableWidgetItem(str(r.get("id", ""))))
                 self.msg_table.setItem(i, 1, QTableWidgetItem(str(r.get("telegram_date", ""))[:19]))
                 self.msg_table.setItem(i, 2, QTableWidgetItem(str(r.get("channel_name", ""))))
@@ -255,10 +605,83 @@ class MainWindow(QMainWindow):
                 self.msg_table.setItem(i, 6, QTableWidgetItem("✓" if r.get("has_media") else ""))
                 text_preview = (r.get("text_content") or "")[:80].replace("\n", " ")
                 self.msg_table.setItem(i, 7, QTableWidgetItem(text_preview))
-                # Store full row data
                 self.msg_table.item(i, 0).setData(Qt.UserRole, dict(r))
+
+            # Update stats in header
+            self.msg_stats_label.setText(
+                f"Showing: {len(filtered_rows)} | DB Total: {len(rows)}"
+            )
         except Exception as e:
             self.status_bar.showMessage(f"DB error: {e}", 4000)
+
+        # Update header stats
+        if self.db:
+            try:
+                stats = self.db.get_runtime_stats()
+                self.msg_stats_label.setText(
+                    f"Total: {stats.get('total_messages', 0)} | "
+                    f"Pending: {stats.get('pending', 0)} | "
+                    f"Approved: {stats.get('approved', 0)}"
+                )
+            except Exception:
+                pass
+
+    def _clear_message_filters(self):
+        self.msg_keyword.clear()
+        self.msg_status.setCurrentIndex(0)
+        self.msg_has_media.setCurrentIndex(0)
+        self.msg_flagged.setCurrentIndex(0)
+        self._refresh_messages()
+
+    def _update_preview(self):
+        """Live preview for selected row (modern side panel)."""
+        selected = self.msg_table.selectedItems()
+        if not selected:
+            self.preview_text.clear()
+            self.preview_meta.setText("Select a row above to preview extracted data and content.")
+            return
+
+        # Get data from first column of first selected row
+        row = selected[0].row()
+        item0 = self.msg_table.item(row, 0)
+        if not item0:
+            return
+        data = item0.data(Qt.UserRole) or {}
+
+        text = data.get("text_content", "") or ""
+        self.preview_text.setPlainText(text[:800] + ("..." if len(text) > 800 else ""))
+
+        # Build nice meta
+        nick = data.get("nickname") or data.get("extracted_json", {}).get("nickname", "-")
+        code = data.get("code") or data.get("extracted_json", {}).get("code", "-")
+        status = data.get("review_status", "-")
+        conf = data.get("extract_confidence")
+        conf_str = f"{conf:.2f}" if isinstance(conf, (int, float)) else "-"
+
+        meta = f"<b>Nickname:</b> {nick} &nbsp;&nbsp; <b>Code:</b> {code}<br/>"
+        meta += f"<b>Status:</b> {status} &nbsp;&nbsp; <b>Confidence:</b> {conf_str}<br/>"
+        meta += f"<b>Channel:</b> {data.get('channel_name', '-')} &nbsp;&nbsp; <b>Media:</b> {'Yes' if data.get('has_media') else 'No'}"
+        self.preview_meta.setText(meta)
+
+    def _show_message_context_menu(self, pos):
+        """Modern context menu for table rows (right-click actions)."""
+        menu = QMenu(self)
+        menu.addAction("Approve", lambda: self._quick_review("approved"))
+        menu.addAction("Reject", lambda: self._quick_review("rejected"))
+        menu.addSeparator()
+        menu.addAction("Toggle Flag", self._toggle_flag)
+        menu.addAction("Open Detail...", self._open_selected_detail)
+        menu.exec(self.msg_table.mapToGlobal(pos))
+
+    def _open_selected_detail(self):
+        selected = self.msg_table.selectedItems()
+        if selected:
+            row = selected[0].row()
+            # Simulate double click on first column
+            idx = self.msg_table.model().index(row, 0)
+            self._open_message_detail(idx)
+        else:
+            self.status_bar.showMessage("Select a row first", 1500)
 
     def _open_message_detail(self, index):
         row = index.row()
