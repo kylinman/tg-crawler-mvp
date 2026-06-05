@@ -15,6 +15,8 @@ chmod +x scripts/local/*.sh
 ./scripts/local/setup-python.sh
 ```
 
+`setup-python.sh` 会为 `web/`、`crawler/` 和 `desktop/`（Qt 桌面界面）分别创建独立的 `.venv`。
+
 ## 2) Initialize PostgreSQL schema
 
 **Windows:**
@@ -109,6 +111,26 @@ Default:
 ```
 
 The first run requires Telegram login code/2FA password interaction.
+
+### Start desktop Qt UI (experimental cross-platform GUI)
+
+After running `setup-python.sh`:
+
+**Windows (PowerShell):**
+```powershell
+. .\desktop\.venv\Scripts\Activate.ps1
+python desktop/main.py
+```
+
+**macOS / Linux:**
+```bash
+source desktop/.venv/bin/activate
+python desktop/main.py
+```
+
+(Or use uv for the desktop venv as shown in `desktop/README.md`.)
+
+The Qt app provides a native desktop alternative to the web UI (same DB backend).
 
 ## Conflict guards (single-instance)
 

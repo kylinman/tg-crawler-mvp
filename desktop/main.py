@@ -37,7 +37,7 @@ from common.normalize import normalize_code
 from common.extracted import has_meaningful_extracted
 
 # Local modules
-from .db import DesktopDB
+from desktop.db import DesktopDB
 
 class MainWindow(QMainWindow):
     def __init__(self):

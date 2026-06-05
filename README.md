@@ -163,6 +163,8 @@ cp .env.local.example .env.local
 ./scripts/local/run-web.sh
 ```
 
+`setup-python.sh` 现在也会为 `desktop/` 创建 `.venv`（用于 Qt 跨平台桌面界面）。
+
 然后登录 Web 后台，通过页面按钮 **一键启动采集链路**（自动拉起 MinIO + crawler）：
 
 - 首页：`http://localhost:8080/`
@@ -190,6 +192,18 @@ pip install -r requirements.txt
 set DATABASE_URL=postgresql://tguser:tgpwd@localhost:5432/tg_crawler
 uvicorn main:app --reload --port 8080
 ```
+
+Desktop (Qt 界面，实验性)：
+
+```bash
+cd desktop
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+（推荐使用 `uv` 更快：`uv venv && uv pip install -r requirements.txt`）
 
 若你仍连接的是 Docker 中的 Postgres，请把端口改回 `5433`。
 

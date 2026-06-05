@@ -39,17 +39,26 @@ function New-VenvIfMissing {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $pythonLauncher = Get-PythonExe
-$projects = @('web', 'crawler')
+$projects = @('web', 'crawler', 'desktop')
 
 foreach ($project in $projects) {
     $projectDir = Join-Path $repoRoot $project
+    $reqFile = Join-Path $projectDir 'requirements.txt'
+
+    if (-not (Test-Path $reqFile)) {
+        Write-Host "[$project] No requirements.txt, skipping."
+        continue
+    }
+
     $venvPython = New-VenvIfMissing -ProjectDir $projectDir -PythonLauncher $pythonLauncher
 
     if ($UpgradePip) {
         & $venvPython -m pip install --upgrade pip
     }
 
-    & $venvPython -m pip install -r (Join-Path $projectDir 'requirements.txt')
+    & $venvPython -m pip install -r $reqFile
 }
 
-"Python environments ready for web and crawler."
+"Python environments ready for web, crawler and desktop (Qt UI)."
+Write-Host ""
+Write-Host "Tip: On Unix, install 'uv' (https://astral.sh/uv) for much faster setup (the .sh script prefers it automatically)."

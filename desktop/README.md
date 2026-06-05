@@ -12,22 +12,28 @@ PySide6-based desktop UI for the TG Crawler MVP.
 
 ## Run (after main project setup)
 
+**Recommended (one command from repo root):**
+
 ```bash
-# 1. Install deps (from repo root or desktop/)
+./scripts/local/setup-python.sh     # auto-creates desktop/.venv (the .sh script *prefers uv* if you have it installed)
+source desktop/.venv/bin/activate
+python desktop/main.py
+```
+
+(If `uv` is installed, `setup-python.sh` will use it automatically for faster venv creation + installs.)
+
+Manual with uv only for desktop:
+
+```bash
 cd desktop
-pip install -r requirements.txt
-
-# 2. Make sure DB is up (e.g. from project root)
-# docker compose up -d postgres
-# or use your local postgres on 5433
-
-# 3. Run the Qt app
+uv venv --python 3.11 .venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
 python main.py
 ```
 
-The app will look for `DATABASE_URL` or default to the compose one (port 5433).
-
-It also respects root `.env` / `.env.local` if you load them.
+The app will look for `DATABASE_URL` (or default to compose one on port 5433).
+It respects root `.env` / `.env.local` (the code loads them via common patterns).
 
 ## Cross-platform notes
 
@@ -46,8 +52,9 @@ Current working:
 - Ops/Control tab prepared for service launcher (ports web logic).
 - Settings and Persons tabs stubbed.
 
-To run (requires PySide6 + running postgres):
-  cd desktop && pip install -r requirements.txt && python main.py
+To run (after venv setup):
+  source desktop/.venv/bin/activate && python desktop/main.py
+  # or with uv: uv run --with-editable . python desktop/main.py (advanced)
 
 Next (easy extensions):
 - Real media thumbnails (boto3 + QPixmap)
