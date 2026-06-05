@@ -1,10 +1,25 @@
 # TG Crawler MVP
 
+**English:**  
+Telegram channel incremental crawling, structured extraction, media object storage (MinIO), PostgreSQL persistence, and a FastAPI-based admin review backend. Supports **deduplication of repeated posts by the same person** (rule-based numbering + optional LLM).
+
+**中文：**  
 Telegram 频道增量采集、结构化抽取、媒体对象存储（MinIO）、PostgreSQL 持久化，以及基于 FastAPI 的审核后台。支持**同一人重复发帖去重**（规则编号 + 可选大模型）。
 
 ---
 
-## 功能概览
+## Features Overview / 功能概览
+
+**English:**
+
+| Module | Description |
+|--------|-------------|
+| **crawler** | Uses Telethon to log into channels, incrementally fetches messages by `last_crawled_msg_id`; performs rule-based text extraction; downloads images and uploads to MinIO, with optional Chinese OCR; supports field inheritance and historical backfill for `media_group_id` albums. |
+| **web** | Admin interface: list filtering, details, review status and audit logs; session Cookie + JWT; supports admin/user roles and account management. |
+| **postgres** | Channels, messages, normalized profiles, media metadata, reviewers and audit tables (see `init.sql`). |
+| **minio** | Media files and thumbnails; default bucket policy allows anonymous object reads (for easy direct links; tighten in production). |
+
+**中文：**
 
 | 模块 | 说明 |
 |------|------|
@@ -15,7 +30,23 @@ Telegram 频道增量采集、结构化抽取、媒体对象存储（MinIO）、
 
 ---
 
-## 架构与数据流
+## Architecture and Data Flow / 架构与数据流
+
+**English:**
+
+```
+Telegram ──► crawler ──► PostgreSQL (messages / profiles / …)
+                │
+                └──► MinIO (original images + thumbnails)
+
+Browser ──► web (FastAPI) ──► PostgreSQL
+                └──► Media URLs point to MinIO public addresses
+```
+
+- **Resume crawling**: `channels.last_crawled_msg_id` records progress; duplicate `telegram_message_id` will not be inserted again.
+- **Deduplication**: Performed before writing to the database and downloading media (see "Same-person Deduplication" below).
+
+**中文：**
 
 ```
 Telegram ──► crawler ──► PostgreSQL (messages / profiles / …)
@@ -31,7 +62,54 @@ Telegram ──► crawler ──► PostgreSQL (messages / profiles / …)
 
 ---
 
-## 快速开始（Docker Compose）
+## Quick Start (Docker Compose) / 快速开始（Docker Compose）
+
+**English:**
+
+### 1. Prepare Environment Variables
+
+Copy the example file and fill in real values:
+
+```bash
+cp .env.example .env
+```
+
+Required items at minimum:
+
+- `TG_API_ID`, `TG_API_HASH`: Obtain after creating an app at [my.telegram.org](https://my.telegram.org).
+- `TG_PHONE`: Phone number with country code (first login requires completing verification code / two-step verification in the terminal).
+- `TARGET_CHANNELS`: Channel usernames (without `@`), separated by English commas.
+
+### 2. Start Dependencies and Web
+
+```bash
+docker compose up -d postgres minio web
+```
+
+- Admin backend: <http://localhost:8080>
+- Default admin: On first start when there are no reviewers in the database, `admin` / `admin123` will be automatically created (see `web/main.py` startup logic). **Before going live, be sure to change the password and set a strong `ADMIN_SECRET`.**
+
+Set environment variables for the `web` service in `docker-compose.yml`:
+
+```yaml
+ADMIN_SECRET: <random long string>
+```
+
+### 3. Run the Crawler (interactive login recommended in local terminal)
+
+```bash
+docker compose run --rm crawler
+```
+
+The first run will prompt for Telegram verification code; the session is saved in the Docker volume `tg_session` (mounted to `session/` inside the container).
+
+To start only the crawler service (non-interactive scenarios require an existing session):
+
+```bash
+docker compose up crawler
+```
+
+**中文：**
 
 ### 1. 准备环境变量
 
@@ -78,7 +156,18 @@ docker compose up crawler
 
 ---
 
-## 端口与访问
+## Ports and Access / 端口与访问
+
+**English:**
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Web | 8080 | Admin interface |
+| PostgreSQL | **5433** (host) | Mapped to container `5432`; connect from host tools to `localhost:5433`, username/db name see compose |
+| MinIO S3 API | 9000 | Used by crawler/web containers at `http://minio:9000` |
+| MinIO Console | 9001 | Default credentials see compose (must change in production) |
+
+**中文：**
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
@@ -89,7 +178,58 @@ docker compose up crawler
 
 ---
 
-## 环境变量说明
+## Environment Variables / 环境变量说明
+
+**English:**
+
+### Telegram and Crawling (crawler / local run)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `TG_API_ID` | Yes | Telegram API ID |
+| `TG_API_HASH` | Yes | Telegram API Hash |
+| `TG_PHONE` | Yes | Phone number for login |
+| `TG_PROXY_TYPE` / `TG_PROXY_HOST` / `TG_PROXY_PORT` | No | Configure proxy if Telegram access fails inside container (`socks5` / `socks4` / `http`) |
+| `TARGET_CHANNELS` | No | Default example channels; comma-separated usernames |
+| `DATABASE_URL` | Injected by Compose | PostgreSQL connection string |
+| `S3_*` | Injected by Compose | MinIO endpoint, keys, bucket name |
+
+### Same-person Deduplication (crawler)
+
+Deduplication is executed **before writing to `messages` and downloading media**. If a match is found, the entire record is skipped (saves database and bandwidth).
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEDUP_LLM_ENABLED` | `false` | `true` / `1` / `yes` to enable LLM deduplication |
+| `DEDUP_LLM_API_URL` | `https://api.deepseek.com/v1/chat/completions` | DeepSeek official compatible endpoint; change to the corresponding Chat Completions URL for other providers |
+| `DEDUP_LLM_API_KEY` | empty | DeepSeek platform API Key (`Bearer`) |
+| `DEDUP_LLM_MODEL` | `deepseek-chat` | Recommended for dedup: `deepseek-chat`; `deepseek-reasoner` is slower, generally unnecessary |
+| `DEDUP_LLM_TIMEOUT_SEC` | `60` | Single request timeout (seconds) |
+| `DEDUP_CANDIDATE_LIMIT` | `40` | For each new post, only compare against the **most recent N stored messages** in this channel |
+| `DEDUP_MAX_TEXT_CHARS` | `1200` | Truncation length for main text sent to the model |
+| `DEDUP_MAX_FIELD_JSON_CHARS` | `800` | Truncation length for extracted fields JSON sent to the model |
+
+**Rule-based deduplication (no LLM dependency)**: If the extraction result contains a `code` (number), and the channel already has the same `extracted_json->>'code'`, it is treated as the same business record and skipped **without calling the model**.
+
+**API contract**: `POST` JSON, compatible with OpenAI `v1/chat/completions` (DeepSeek is the same); the model response must be parseable JSON and contain the field:
+
+```json
+{"duplicate_of_db_id": 123}
+```
+
+If no duplicate, return `null`. If the returned `id` is not in the current candidate list, it will be ignored and the record will be **normally stored**.
+
+**Failure policy**: On request failure, timeout, or unparseable response, **log a warning and store normally** to avoid interrupting collection.
+
+### Admin Backend (web)
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Shared with the crawler |
+| `S3_*` | Consistent with MinIO when reading media metadata / constructing external links |
+| `ADMIN_SECRET` | JWT signing secret, **must be changed in production** |
+
+**中文：**
 
 ### Telegram 与采集（crawler / 本机运行）
 
@@ -140,7 +280,76 @@ docker compose up crawler
 
 ---
 
-## 本地开发（不通过 Docker 跑爬虫）
+## Local Development (without Docker for crawler) / 本地开发（不通过 Docker 跑爬虫）
+
+**English:**
+
+### One-click Local Scripts (recommended)
+
+The repository provides Docker-free scripts supporting Windows / macOS / Linux. See `scripts/local/README.md`:
+
+**Windows (PowerShell):**
+```powershell
+./scripts/local/setup-python.ps1
+./scripts/local/init-db.ps1
+Copy-Item .env.local.example .env.local
+./scripts/local/run-web.ps1
+```
+
+**macOS / Linux (Bash):**
+```bash
+chmod +x scripts/local/*.sh
+./scripts/local/setup-python.sh
+./scripts/local/init-db.sh
+cp .env.local.example .env.local
+./scripts/local/run-web.sh
+```
+
+`setup-python.sh` will now also create a `.venv` for `desktop/` (for the Qt cross-platform desktop interface).
+
+Then log into the web backend and use the page button **One-click start data pipeline** (automatically launches MinIO + crawler):
+
+- Home: `http://localhost:8080/`
+- System Console: `http://localhost:8080/ops`
+
+### Manual Method
+
+```bash
+cd crawler
+python3 -m venv .venv
+source .venv/bin/activate    # macOS/Linux
+# .venv\Scripts\activate     # Windows
+pip install -r requirements.txt
+# After configuring environment variables
+python main.py
+```
+
+Web:
+
+```bash
+cd web
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+set DATABASE_URL=postgresql://tguser:tgpwd@localhost:5432/tg_crawler
+uvicorn main:app --reload --port 8080
+```
+
+Desktop (Qt interface, experimental):
+
+```bash
+cd desktop
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+(Recommended to use `uv` for speed: `uv venv && uv pip install -r requirements.txt`)
+
+If you are still connecting to Postgres inside Docker, change the port back to `5433`.
+
+**中文：**
 
 ### 一键本地脚本（推荐）
 
@@ -209,7 +418,15 @@ python main.py
 
 ---
 
-## 数据库初始化
+## Database Initialization / 数据库初始化
+
+**English:**
+
+On the first start of the Postgres container, `init.sql` creates the tables and indexes. The default admin account is written by the **Web service on first start** (password hash is not hardcoded in SQL).
+
+To reset the database, delete the Docker volume `pg_data` and run `docker compose up` again (**all data will be cleared**).
+
+**中文：**
 
 首次启动 Postgres 容器时，`init.sql` 会创建表与索引。默认管理员账号由 **Web 服务首次启动** 写入（不在 SQL 中硬编码密码哈希）。
 
@@ -217,7 +434,27 @@ python main.py
 
 ---
 
-## 目录结构（主要部分）
+## Directory Structure (main parts) / 目录结构（主要部分）
+
+**English:**
+
+```
+├── crawler/           # Crawling and extraction
+│   ├── main.py        # Incremental crawling entry
+│   ├── db.py          # Database access
+│   ├── extractor.py   # Rule-based extraction
+│   ├── uploader.py    # MinIO upload
+│   └── dedupe_llm.py  # Numbering + LLM deduplication
+├── web/               # FastAPI admin backend
+│   ├── main.py
+│   ├── auth.py
+│   └── templates/
+├── init.sql           # Table structure
+├── docker-compose.yml
+└── .env.example
+```
+
+**中文：**
 
 ```
 ├── crawler/           # 采集与抽取
@@ -237,7 +474,16 @@ python main.py
 
 ---
 
-## 工程规范与更新记录
+## Engineering Standards and Update Log / 工程规范与更新记录
+
+**English:**
+
+- Python Google Style baseline: `docs/PYTHON_GOOGLE_STYLE_BASELINE.md`
+- Continuous update log: `docs/ENGINEERING_UPDATES.md`
+- Global optimization plan and roadmap: `docs/OPTIMIZATION_ROADMAP.md` (includes phased deliverables, verification criteria, and risk rollback)
+- Qt cross-platform desktop interface (experimental): `desktop/` (PySide6, reuses common/ + same DB, supports message list, quick review, Ops control and other core features)
+
+**中文：**
 
 - Python Google 风格基线：`docs/PYTHON_GOOGLE_STYLE_BASELINE.md`
 - 持续更新日志：`docs/ENGINEERING_UPDATES.md`
@@ -246,7 +492,15 @@ python main.py
 
 ---
 
-## 安全与合规提示
+## Security and Compliance Notes / 安全与合规提示
+
+**English:**
+
+1. **Credentials**: The default database, MinIO, and admin passwords in the compose file are for demonstration purposes only. **Do not use them directly on the public internet.**
+2. **MinIO**: The default bucket policy allows anonymous `GetObject`; production recommends using pre-signed URLs or gateway authentication.
+3. **Legal and platform terms**: Collecting, storing, and displaying user-generated content must comply with local laws and Telegram's terms of use; this repository is for technical demonstration only.
+
+**中文：**
 
 1. **凭据**：仓库内 compose 默认数据库、MinIO、管理员口令均为演示用途，**切勿直接用于公网**。
 2. **MinIO**：默认桶策略允许匿名 `GetObject`；生产建议使用预签名 URL 或网关鉴权。
@@ -254,7 +508,44 @@ python main.py
 
 ---
 
-## 常见问题
+## FAQ / 常见问题
+
+**English:**
+
+**Image pull stuck at `auth.docker.io` / `docker.io` timeout**  
+`docker-compose.yml` has been changed to pull from **AWS Public ECR**: `python:3.11-slim` base images for `postgres`, `web`/`crawler`, and **Bitnami MinIO** (`public.ecr.aws/bitnami/minio`). Run first:
+
+```bash
+docker compose pull
+docker compose build --no-cache web
+docker compose up -d postgres minio web
+```
+
+If you previously used the official MinIO image, the volume path changed from `/data` to `/bitnami/minio/data`; old bucket data will not migrate automatically. For development, you can delete volumes and start over: `docker compose down -v` (will clear MinIO and Postgres volumes).
+
+**Crawler keeps asking for verification code**  
+Session files need to be persisted: Compose already uses the named volume `tg_session`; if you switch to a local directory mount, ensure `session/` is writable and not accidentally deleted.
+
+**Host can access Telegram, but container cannot**  
+Docker containers do not automatically inherit the system's "global proxy". Set `TG_PROXY_TYPE/TG_PROXY_HOST/TG_PROXY_PORT` (and optionally username/password) in `.env`, then run `docker compose run --rm crawler`.
+
+**Media cannot be opened in browser**  
+Check if `S3_PUBLIC_ENDPOINT` is an address accessible from the host (inside container it is `http://minio:9000`; browser needs `http://localhost:9000` etc.).
+
+**Deduplication too strict or too loose**  
+- Too strict: Lower `DEDUP_CANDIDATE_LIMIT` or disable `DEDUP_LLM_ENABLED`, keep only numbering rules.  
+- Too loose: Appropriately increase `DEDUP_CANDIDATE_LIMIT`; long-term solution can use vector retrieval on historical messages before handing to the model.
+
+**Web cannot connect to database**  
+Confirm `DATABASE_URL`: inside container the service name is `postgres`, port `5432`; if running crawler/web on host connecting to Compose DB, use `localhost:5433`.
+
+**`dockerDesktopLinuxEngine` / `cannot find the file specified`**  
+Docker Desktop not started or engine crashed: **Completely exit and reopen Docker Desktop**, wait for the tray icon to be ready before running `docker compose`.
+
+**Still prompts binding `0.0.0.0:5432` failure**  
+This means the `docker-compose.yml` in the current directory is an old version (or you are executing the command in another clone). Confirm in the root of this repository that the Postgres port is **`5433:5432`**, or keep consistent with the project directory opened in Cursor.
+
+**中文：**
 
 **拉镜像卡在 `auth.docker.io` / `docker.io` 超时**  
 `docker-compose.yml` 已改为从 **AWS Public ECR** 拉取：`postgres`、`web`/`crawler` 的基础镜像 `python:3.11-slim`，以及 **Bitnami MinIO**（`public.ecr.aws/bitnami/minio`）。请先执行：
@@ -291,6 +582,10 @@ Docker Desktop 未启动或引擎崩溃：**完全退出并重新打开 Docker D
 
 ---
 
-## 许可证
+## License / 许可证
 
+**English:**  
+Unless a separate license file is provided in the repository, it defaults to the project owner's declaration; third-party libraries must comply with their respective licenses.
+
+**中文：**  
 若未在仓库中单独提供许可证文件，默认以项目所有者声明为准；使用第三方库时须遵守其各自许可证。
